@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   Expense,
+  Friend,
   FriendWithBalance,
   GroupMember,
   Payment,
@@ -28,7 +29,8 @@ type CurrencyTotals = Record<string, number>;
  */
 export function useDashboardBalances(
   groupIds: string[],
-  friendsWithBalances: FriendWithBalance[]
+  friendsWithBalances: FriendWithBalance[],
+  friends: Friend[] = []
 ) {
   const repo = useRepository();
   const uid = repo?.uid ?? null;
@@ -69,11 +71,19 @@ export function useDashboardBalances(
     return () => unsubs.forEach((u) => u());
   }, [repo, idsKey]);
 
+  // Build a Set of linkedUids for all friends so we can detect which group
+  // members are already represented in friendsWithBalances.
+  const linkedFriendUids = useMemo(
+    () => new Set(friends.map((f) => f.linkedUid).filter(Boolean)),
+    [friends]
+  );
+
   return useMemo(() => {
     const youAreOwed: CurrencyTotals = {};
     const youOwe: CurrencyTotals = {};
 
-    // Friend side (already user-scoped).
+    // Friend side: ad-hoc + group-derived pairwise balances (already user-scoped).
+    // This already covers all group interactions with linked friends.
     for (const f of friendsWithBalances) {
       if (f.netBalance > 0) {
         youAreOwed[f.currency] = (youAreOwed[f.currency] ?? 0) + f.netBalance;
@@ -82,13 +92,60 @@ export function useDashboardBalances(
       }
     }
 
-    // Group side: only the "you" member rows.
+    // Group side: only add the net balance contribution from UNLINKED members
+    // (i.e., members who don't have a linkedUid that matches any Friend).
+    // Linked-friend contributions are already captured in friendsWithBalances above,
+    // so including them here would double-count.
     if (uid) {
       for (const slice of Object.values(slices)) {
+        const youMember = slice.members.find((m) => m.linkedUid === uid);
+        if (!youMember) continue;
+
+        // Filter to only expenses/payments where the other party is an unlinked member.
+        const unlinkedExpenses = slice.expenses.filter((e) => {
+          // Expense involves you on one side. The "other" payer or split recipient
+          // must be an unlinked member for it to be uncovered by friendsWithBalances.
+          const otherPayerId = e.paidById !== youMember.id ? e.paidById : null;
+          if (otherPayerId) {
+            const otherMember = slice.members.find((m) => m.id === otherPayerId);
+            if (otherMember && otherMember.linkedUid && linkedFriendUids.has(otherMember.linkedUid)) {
+              // Payer is a linked friend — already counted via friendsWithBalances.
+              return false;
+            }
+          }
+          // Check if ALL other split recipients (besides you) are linked friends.
+          const otherSplitIds = Object.keys(e.splits).filter(
+            (id) => id !== youMember.id
+          );
+          const allLinked = otherSplitIds.every((id) => {
+            const m = slice.members.find((mem) => mem.id === id);
+            return m && m.linkedUid && linkedFriendUids.has(m.linkedUid);
+          });
+          // Include only if NOT all linked (i.e. at least one unlinked party).
+          return !allLinked;
+        });
+
+        const unlinkedPayments = slice.payments.filter((p) => {
+          const otherId =
+            p.fromMemberId === youMember.id ? p.toMemberId : p.fromMemberId;
+          const otherMember = slice.members.find((m) => m.id === otherId);
+          if (
+            otherMember &&
+            otherMember.linkedUid &&
+            linkedFriendUids.has(otherMember.linkedUid)
+          ) {
+            return false; // Already counted via friendsWithBalances.
+          }
+          return true;
+        });
+
+        if (unlinkedExpenses.length === 0 && unlinkedPayments.length === 0)
+          continue;
+
         const balances = calculateGroupBalances(
           slice.members,
-          slice.expenses,
-          slice.payments
+          unlinkedExpenses,
+          unlinkedPayments
         );
         for (const b of balances) {
           if (b.member.linkedUid !== uid) continue;
@@ -111,7 +168,7 @@ export function useDashboardBalances(
     }
 
     return { youAreOwed, youOwe, net };
-  }, [slices, friendsWithBalances, uid]);
+  }, [slices, friendsWithBalances, uid, linkedFriendUids]);
 }
 
 function emptySlice(existing?: GroupSlice): GroupSlice {

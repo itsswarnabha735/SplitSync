@@ -31,7 +31,8 @@ export default function DashboardPage() {
 
   const { youAreOwed, youOwe, net } = useDashboardBalances(
     groupIds,
-    friendsWithBalances
+    friendsWithBalances,
+    friends
   );
 
   return (
