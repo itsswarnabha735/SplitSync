@@ -25,10 +25,10 @@ export default function DashboardPage() {
   const runSyncing = useUiStore((s) => s.runSyncing);
 
   const { groups } = useGroups();
-  const { friends, friendsWithBalances } = useFriends();
+  const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
+  const { friends, friendsWithBalances } = useFriends(groupIds);
   const invites = useInvites();
 
-  const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
   const { youAreOwed, youOwe, net } = useDashboardBalances(
     groupIds,
     friendsWithBalances
