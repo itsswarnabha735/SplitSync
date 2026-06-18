@@ -1,0 +1,6 @@
+{
+  "name": "SplitSync",
+  "description": "An offline-first, dynamic expense splitting app with a built-in debt simplification engine to minimize group transactions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

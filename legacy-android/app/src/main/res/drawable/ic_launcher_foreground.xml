@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Centered bold transfer arrows and money splitting icon for SplitSync -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M48,34 L28,34 C24.6,34 22,36.6 22,40 L22,68 C22,71.4 24.6,74 28,74 L48,74" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,34 L80,34 C83.4,34 86,36.6 86,40 L86,68 C86,71.4 83.4,74 80,74 L60,74" />
+    <path
+        android:fillColor="#D1FAE5"
+        android:pathData="M46,42 L54,34 L46,26 Z M62,66 L54,74 L62,82 Z" />
+</vector>

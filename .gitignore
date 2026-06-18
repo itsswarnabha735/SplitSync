@@ -1,0 +1,32 @@
+# --- Next.js / Node ---
+/node_modules
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# --- Env / secrets ---
+.env
+.env.local
+.env*.local
+
+# --- Firebase ---
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+legacy-android/app/google-services.json
+
+# --- Misc ---
+.DS_Store
+*.iml
+
+# --- Legacy Android (Gradle build artifacts) ---
+legacy-android/.gradle
+legacy-android/.kotlin
+legacy-android/local.properties
+legacy-android/build
+legacy-android/captures
+legacy-android/.externalNativeBuild
+legacy-android/.cxx
