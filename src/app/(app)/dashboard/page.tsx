@@ -87,39 +87,47 @@ export default function DashboardPage() {
         }
       />
 
-      <main id="main-content" className="container space-y-5 py-5">
+      <main id="main-content" className="container space-y-5 py-6">
         {/* Summary */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Card className="brand-gradient p-4 text-white">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase opacity-80">
-              <Wallet className="h-3.5 w-3.5" />
-              Net balance
+          <Card className="money-card social-gradient surface-glow p-5 text-white">
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 text-xs font-black uppercase opacity-85">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/18">
+                  <Wallet className="h-3.5 w-3.5" />
+                </span>
+                Net balance
+              </div>
+              <CurrencyTotals
+                totals={net}
+                signed
+                className="mt-3 text-3xl font-black tracking-tight"
+                emptyLabel="All settled"
+              />
             </div>
-            <CurrencyTotals
-              totals={net}
-              signed
-              className="mt-1 text-2xl font-black"
-              emptyLabel="All settled"
-            />
           </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5 text-success" />
+          <Card className="border-success/20 bg-success/10 p-5">
+            <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-success/15 text-success">
+                <TrendingUp className="h-3.5 w-3.5" />
+              </span>
               You are owed
             </div>
             <CurrencyTotals
               totals={youAreOwed}
-              className="mt-1 text-2xl font-black text-success"
+              className="mt-3 text-3xl font-black tracking-tight text-success"
             />
           </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-              <TrendingDown className="h-3.5 w-3.5 text-destructive" />
+          <Card className="border-destructive/20 bg-destructive/10 p-5">
+            <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-destructive/15 text-destructive">
+                <TrendingDown className="h-3.5 w-3.5" />
+              </span>
               You owe
             </div>
             <CurrencyTotals
               totals={youOwe}
-              className="mt-1 text-2xl font-black text-destructive"
+              className="mt-3 text-3xl font-black tracking-tight text-destructive"
             />
           </Card>
         </div>
@@ -133,7 +141,7 @@ export default function DashboardPage() {
             {invites.map((inv) => (
               <Card
                 key={inv.id}
-                className="flex items-center gap-3 border-primary/30 bg-primary/5 p-3"
+                className="flex items-center gap-3 border-primary/25 bg-primary/5 p-3"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-bold">{inv.groupName}</p>
@@ -164,7 +172,7 @@ export default function DashboardPage() {
             ))}
             {inviteError && (
               <p
-                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
                 role="alert"
               >
                 {inviteError}
@@ -193,9 +201,9 @@ export default function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card className="space-y-4 p-5">
+            <Card className="space-y-4 border-primary/10 p-5">
               <div className="flex items-center gap-3">
-                <div className="brand-gradient flex h-12 w-12 items-center justify-center rounded-full text-lg font-black text-white">
+                <div className="social-gradient surface-glow flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">

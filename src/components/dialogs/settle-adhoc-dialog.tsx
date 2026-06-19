@@ -103,17 +103,20 @@ export function SettleAdHocDialog({
         </DialogHeader>
         <div className="space-y-4">
           {error && (
-            <p className="text-sm font-semibold text-destructive" role="alert">
+            <p
+              className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              role="alert"
+            >
               {error}
             </p>
           )}
-          <div className="flex items-center justify-center gap-3 rounded-xl bg-muted px-4 py-3">
-            <div className="flex-1 rounded-lg bg-destructive/10 px-3 py-2 text-center">
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-border/70 bg-muted/50 px-4 py-3">
+            <div className="flex-1 rounded-2xl bg-destructive/10 px-3 py-2 text-center">
               <p className="text-[10px] font-bold text-destructive">PAYS</p>
               <p className="font-bold">{fromName}</p>
             </div>
             <ArrowRight className="h-5 w-5 text-muted-foreground" />
-            <div className="flex-1 rounded-lg bg-success/15 px-3 py-2 text-center">
+            <div className="flex-1 rounded-2xl bg-success/15 px-3 py-2 text-center">
               <p className="text-[10px] font-bold text-success">
                 RECEIVES
               </p>

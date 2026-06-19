@@ -13,6 +13,7 @@ import {
   signUpWithEmail,
 } from "@/services/auth";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -96,26 +97,29 @@ export default function LoginPage() {
   return (
     <main
       id="main-content"
-      className="flex min-h-screen items-center justify-center px-4 py-10"
+      className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10"
     >
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="brand-gradient flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/30">
-            <Wallet className="h-8 w-8 text-white" />
+      <div className="brand-gradient absolute inset-x-0 top-0 h-2" />
+      <Card className="surface-glow w-full max-w-sm border-primary/10 bg-card/90 p-4 sm:p-5">
+        <div className="mb-4 flex flex-col items-center gap-2 text-center">
+          <div className="social-gradient surface-glow flex h-[3.25rem] w-[3.25rem] items-center justify-center rounded-[1.1rem] shadow-lg shadow-primary/25">
+            <Wallet className="h-6 w-6 text-white" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight">SplitSync</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-black tracking-tight text-foreground">
+            SplitSync
+          </h1>
+          <p className="text-sm font-medium text-muted-foreground">
             {mode === "signin"
               ? "Sign in to sync your groups"
               : "Create your SplitSync account"}
           </p>
-          <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+          <p className="max-w-xs text-[11px] leading-4 text-muted-foreground">
             Continue with Google for provider-managed sign-in, or use an email
             password saved through Firebase Authentication.
           </p>
         </div>
 
-        <div className="mb-4 flex items-start gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+        <div className="mb-3 flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/5 px-3 py-2 text-[11px] font-medium leading-4 text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
             Split data is tied to your signed-in account. SplitSync stores only
@@ -125,7 +129,7 @@ export default function LoginPage() {
 
         {error && (
           <div
-            className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+            className="mb-4 flex items-center gap-2 rounded-2xl border border-destructive/15 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
             role="alert"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -134,7 +138,7 @@ export default function LoginPage() {
         )}
         {message && (
           <div
-            className="mb-4 rounded-lg bg-primary/10 px-4 py-3 text-sm font-semibold text-primary"
+            className="mb-4 rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary"
             role="status"
             aria-live="polite"
           >
@@ -142,7 +146,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           {mode === "signup" && (
             <div className="space-y-1.5">
               <Label htmlFor="name">Display name</Label>
@@ -215,7 +219,7 @@ export default function LoginPage() {
         {mode === "signin" && (
           <button
             type="button"
-            className="mt-3 w-full text-center text-sm font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 w-full rounded-lg py-1 text-center text-sm font-bold text-primary transition-colors hover:bg-primary/5 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handlePasswordReset}
             disabled={working || resetting}
           >
@@ -223,7 +227,7 @@ export default function LoginPage() {
           </button>
         )}
 
-        <div className="my-5 flex items-center gap-3">
+        <div className="my-4 flex items-center gap-3">
           <div className="h-px flex-1 bg-border" />
           <span className="text-xs text-muted-foreground">or</span>
           <div className="h-px flex-1 bg-border" />
@@ -233,7 +237,7 @@ export default function LoginPage() {
           type="button"
           variant="outline"
           size="lg"
-          className="w-full"
+          className="w-full bg-card"
           onClick={handleGoogle}
           disabled={working || resetting}
         >
@@ -242,7 +246,7 @@ export default function LoginPage() {
 
         <button
           type="button"
-          className="mt-6 w-full text-center text-sm font-semibold text-primary hover:underline"
+          className="mt-6 w-full rounded-lg py-1 text-center text-sm font-bold text-primary transition-colors hover:bg-primary/5 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             setMode(mode === "signin" ? "signup" : "signin");
             setError(null);
@@ -254,7 +258,7 @@ export default function LoginPage() {
             ? "Don't have an account? Create one"
             : "Already have an account? Sign in"}
         </button>
-      </div>
+      </Card>
     </main>
   );
 }

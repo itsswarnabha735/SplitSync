@@ -169,7 +169,7 @@ export function AddAdHocExpenseDialog({
         <div className="space-y-4">
           {error && (
             <p
-              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
               role="alert"
             >
               {error}
@@ -304,7 +304,7 @@ export function SplitTypeToggle({
 
   return (
     <div
-      className="flex gap-1 rounded-lg bg-muted p-1"
+      className="flex gap-1 rounded-2xl border border-border/70 bg-card/80 p-1 shadow-sm"
       role="radiogroup"
       aria-label="Split type"
     >
@@ -331,9 +331,9 @@ export function SplitTypeToggle({
             }
           }}
           className={cn(
-            "flex-1 rounded-md py-2 text-sm font-bold transition-colors",
+            "flex-1 rounded-xl py-2 text-sm font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             value === option.value
-              ? "bg-background text-foreground shadow-sm"
+              ? "bg-primary text-primary-foreground shadow-[0_10px_20px_-14px_hsl(var(--primary))]"
               : "text-muted-foreground"
           )}
         >

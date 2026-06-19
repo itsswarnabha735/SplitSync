@@ -14,8 +14,8 @@ export function EmptyState({
   action,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed py-14 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-primary/25 bg-card/65 px-5 py-14 text-center shadow-sm backdrop-blur-sm">
+      <div className="brand-gradient surface-glow flex h-14 w-14 items-center justify-center rounded-2xl text-white">
         <Icon className="h-6 w-6" />
       </div>
       <div>

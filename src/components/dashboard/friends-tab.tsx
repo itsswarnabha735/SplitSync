@@ -105,7 +105,7 @@ export function FriendsTab({
 
       {error && (
         <p
-          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+          className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
           role="alert"
         >
           {error}
@@ -132,9 +132,9 @@ export function FriendsTab({
             );
             const primary = nonZero[0];
             return (
-              <Card key={friend.id} className="p-3">
+              <Card key={friend.id} className="border-primary/10 p-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent font-bold text-accent-foreground">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent font-black text-accent-foreground shadow-inner shadow-white/50">
                     {friend.name.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">

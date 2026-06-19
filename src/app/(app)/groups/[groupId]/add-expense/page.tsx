@@ -182,10 +182,10 @@ export default function AddExpensePage({
     <div className="pb-24">
       <AppHeader title="Log new expense" showBack />
 
-      <main id="main-content" className="container space-y-4 py-5">
+      <main id="main-content" className="container space-y-4 py-6">
         {error && (
           <div
-            className="flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+            className="flex items-center gap-2 rounded-2xl border border-destructive/15 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
             role="alert"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -193,7 +193,7 @@ export default function AddExpensePage({
           </div>
         )}
 
-        <Card className="space-y-4 p-5">
+        <Card className="space-y-4 border-primary/10 p-5">
           <p className="text-xs font-black uppercase tracking-wide text-primary">
             Expense details
           </p>
@@ -293,7 +293,7 @@ export default function AddExpensePage({
         />
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-background/90 p-4 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 border-t border-border/60 bg-background/85 p-4 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] backdrop-blur-xl">
         <div className="container">
           <Button
             className="w-full"
@@ -317,7 +317,7 @@ export default function AddExpensePage({
             <DialogTitle>Review expense</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/50 px-3 py-2">
+            <div className="rounded-2xl border border-primary/10 bg-muted/50 px-3 py-2">
               <p className="font-bold">{description.trim()}</p>
               <p className="text-sm text-muted-foreground">
                 {formatMoney(amount, currency)} paid by {memberName(paidBy)} on{" "}
@@ -331,7 +331,7 @@ export default function AddExpensePage({
               {reviewRows.map((row) => (
                 <div
                   key={row.memberId}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/70 px-3 py-2 text-sm"
                 >
                   <span className="font-semibold">{row.name}</span>
                   <span className="font-bold">
@@ -340,7 +340,7 @@ export default function AddExpensePage({
                 </div>
               ))}
             </div>
-            <div className="flex items-start gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
+            <div className="flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/10 px-3 py-2 text-sm text-primary">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="font-semibold">
                 After saving, this expense will update group balances and the
@@ -349,7 +349,7 @@ export default function AddExpensePage({
             </div>
             {error && (
               <p
-                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
                 role="alert"
               >
                 {error}

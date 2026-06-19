@@ -237,16 +237,18 @@ export default function GroupDetailPage({
         }
       />
 
-      <main id="main-content" className="container space-y-4 py-5">
-        <Card className="brand-gradient p-5 text-white">
-          <p className="text-xs font-bold uppercase opacity-80">
-            Total group spend
-          </p>
-          <CurrencyTotals
-            totals={totalsByCurrency}
-            className="mt-1 text-3xl font-black"
-            emptyLabel="$0.00"
-          />
+      <main id="main-content" className="container space-y-4 py-6">
+        <Card className="money-card social-gradient surface-glow p-5 text-white">
+          <div className="relative z-10">
+            <p className="text-xs font-black uppercase opacity-85">
+              Total group spend
+            </p>
+            <CurrencyTotals
+              totals={totalsByCurrency}
+              className="mt-2 text-3xl font-black tracking-tight"
+              emptyLabel="$0.00"
+            />
+          </div>
         </Card>
 
         <Tabs defaultValue="ledger">
@@ -266,8 +268,11 @@ export default function GroupDetailPage({
               />
             ) : (
               expenses.map((e) => (
-                <Card key={e.id} className="flex items-center gap-3 p-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                <Card
+                  key={e.id}
+                  className="flex items-center gap-3 border-primary/10 p-3"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
                     <Receipt className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -322,7 +327,7 @@ export default function GroupDetailPage({
                   return (
                     <Card
                       key={`${b.member.id}-${b.currency}`}
-                      className="flex items-center justify-between gap-3 p-4"
+                      className="flex items-center justify-between gap-3 border-primary/10 p-4"
                     >
                       <div className="min-w-0 space-y-1.5">
                         <p className="font-bold">
@@ -378,7 +383,7 @@ export default function GroupDetailPage({
                 />
               ) : (
                 <>
-                  <div className="flex items-start gap-2 rounded-xl bg-primary/10 p-3 text-sm text-primary">
+                  <div className="flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/10 p-3 text-sm text-primary">
                     <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
                     <p className="font-semibold">
                       These payments minimize the number of transfers needed to
@@ -386,9 +391,9 @@ export default function GroupDetailPage({
                     </p>
                   </div>
                   {simplifiedDebts.map((d, i) => (
-                    <Card key={i} className="space-y-3 p-4">
+                    <Card key={i} className="space-y-3 border-primary/10 p-4">
                       <div className="flex items-center gap-3">
-                        <div className="flex-1 rounded-lg bg-destructive/10 px-3 py-2 text-center">
+                        <div className="flex-1 rounded-2xl bg-destructive/10 px-3 py-2 text-center">
                           <p className="text-[10px] font-bold text-destructive">
                             PAYS
                           </p>
@@ -400,7 +405,7 @@ export default function GroupDetailPage({
                           </span>
                           <ArrowRight className="h-4 w-4 text-primary" />
                         </div>
-                        <div className="flex-1 rounded-lg bg-success/15 px-3 py-2 text-center">
+                        <div className="flex-1 rounded-2xl bg-success/15 px-3 py-2 text-center">
                           <p className="text-[10px] font-bold text-success">
                             RECEIVES
                           </p>
@@ -432,8 +437,11 @@ export default function GroupDetailPage({
               />
             ) : (
               payments.map((p) => (
-                <Card key={p.id} className="flex items-center gap-3 p-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/15 text-success">
+                <Card
+                  key={p.id}
+                  className="flex items-center gap-3 border-success/15 p-3"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-success/15 text-success">
                     <CheckCircle2 className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -462,7 +470,7 @@ export default function GroupDetailPage({
         </Tabs>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-background/90 p-4 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 border-t border-border/60 bg-background/85 p-4 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] backdrop-blur-xl">
         <div className="container">
           <Button
             className="w-full"
@@ -500,7 +508,7 @@ export default function GroupDetailPage({
           </DialogHeader>
           {deleteSummary && (
             <div className="space-y-4">
-              <div className="rounded-lg border bg-muted/50 px-3 py-2">
+              <div className="rounded-2xl border border-primary/10 bg-muted/50 px-3 py-2">
                 <p className="font-bold">{deleteSummary.primary}</p>
                 <p className="text-sm text-muted-foreground">
                   {deleteSummary.secondary}
@@ -511,7 +519,7 @@ export default function GroupDetailPage({
               </p>
               {deleteError && (
                 <p
-                  className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                  className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
                   role="alert"
                 >
                   {deleteError}

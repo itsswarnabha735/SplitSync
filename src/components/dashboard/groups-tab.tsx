@@ -85,13 +85,13 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
       ) : (
         <div className="space-y-2">
           {groups.map((g) => (
-            <Card key={g.id} className="overflow-hidden">
+            <Card key={g.id} className="overflow-hidden border-primary/10">
               <div className="flex items-center gap-2 p-2">
                 <Link
                   href={`/groups/${g.id}`}
-                  className="flex flex-1 items-center gap-3 rounded-lg p-2 transition-colors hover:bg-accent"
+                  className="group flex flex-1 items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-accent"
                 >
-                  <div className="brand-gradient flex h-11 w-11 items-center justify-center rounded-xl text-white">
+                  <div className="social-gradient surface-glow flex h-11 w-11 items-center justify-center rounded-2xl text-white">
                     <Users className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -102,7 +102,7 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
                       {g.description ? ` · ${g.description}` : ""}
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                 </Link>
                 {g.createdBy === user?.uid && (
                   <GroupRowActions
@@ -135,7 +135,7 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
           </p>
           {deleteError && (
             <p
-              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
               role="alert"
             >
               {deleteError}

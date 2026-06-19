@@ -122,7 +122,10 @@ export function AddFriendDialog({
         </DialogHeader>
         <div className="space-y-3">
           {error && (
-            <p className="text-sm font-semibold text-destructive" role="alert">
+            <p
+              className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              role="alert"
+            >
               {error}
             </p>
           )}
@@ -169,9 +172,9 @@ export function AddFriendDialog({
                   type="button"
                   onClick={() => handleAdd(user)}
                   disabled={addingUid !== null}
-                  className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-card/80 p-3 text-left shadow-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent font-black text-accent-foreground">
                     {user.displayName.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">

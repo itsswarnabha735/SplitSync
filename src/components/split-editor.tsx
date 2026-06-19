@@ -57,10 +57,10 @@ export function SplitEditor({
             <label
               key={p.id}
               className={cn(
-                "flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 transition-colors",
+                "flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 shadow-sm transition-colors",
                 checked
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-border bg-card"
+                  ? "border-primary/35 bg-primary/5"
+                  : "border-border/70 bg-card/80"
               )}
             >
               <div className="flex items-center gap-3">
@@ -114,8 +114,8 @@ export function SplitEditor({
         className={cn(
           "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold",
           matches
-            ? "bg-primary/10 text-primary"
-            : "bg-destructive/10 text-destructive"
+            ? "rounded-2xl border border-primary/15 bg-primary/10 text-primary"
+            : "rounded-2xl border border-destructive/15 bg-destructive/10 text-destructive"
         )}
       >
         <span className="flex items-center gap-2">
@@ -132,7 +132,7 @@ export function SplitEditor({
       {participants.map((p) => (
         <div
           key={p.id}
-          className="flex items-center justify-between rounded-xl border bg-card px-4 py-2.5"
+          className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/80 px-4 py-2.5 shadow-sm"
         >
           <span className="font-semibold">{p.name}</span>
           <div className="relative w-32">

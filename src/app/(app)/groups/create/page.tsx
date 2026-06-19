@@ -80,17 +80,17 @@ export default function CreateGroupPage() {
     <div className="pb-24">
       <AppHeader title="Create group" showBack />
 
-      <main id="main-content" className="container space-y-5 py-5">
+      <main id="main-content" className="container space-y-5 py-6">
         {error && (
           <p
-            className="rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+            className="rounded-2xl border border-destructive/15 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
             role="alert"
           >
             {error}
           </p>
         )}
 
-        <Card className="space-y-4 p-5">
+        <Card className="space-y-4 border-primary/10 p-5">
           <p className="text-xs font-black uppercase tracking-wide text-primary">
             Group profile
           </p>
@@ -140,7 +140,7 @@ export default function CreateGroupPage() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex h-10 items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 text-sm font-semibold">
+            <div className="flex h-11 items-center gap-2 rounded-2xl border border-primary/25 bg-primary/5 px-3 text-sm font-bold">
               <UserRound className="h-4 w-4 text-primary" />
               You (creator)
             </div>
@@ -179,7 +179,7 @@ export default function CreateGroupPage() {
           </div>
 
           {friends.length === 0 && (
-            <div className="mt-3 rounded-xl border bg-muted/50 p-4">
+            <div className="mt-3 rounded-2xl border border-primary/15 bg-card/80 p-4 shadow-sm">
               <p className="font-bold">Add a friend to continue</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Groups need at least one friend. Search by email here, then pick
@@ -198,7 +198,7 @@ export default function CreateGroupPage() {
         </div>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-background/90 p-4 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 border-t border-border/60 bg-background/85 p-4 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] backdrop-blur-xl">
         <div className="container">
           <Button
             className="w-full"

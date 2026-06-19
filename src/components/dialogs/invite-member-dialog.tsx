@@ -98,7 +98,10 @@ export function InviteMemberDialog({
             />
           </div>
           {message && (
-            <p className="text-sm font-semibold text-destructive" role="alert">
+            <p
+              className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              role="alert"
+            >
               {message}
             </p>
           )}

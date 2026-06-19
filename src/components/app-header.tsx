@@ -22,7 +22,7 @@ export function AppHeader({
 }: AppHeaderProps) {
   const router = useRouter();
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 shadow-sm shadow-foreground/[0.03] backdrop-blur-xl">
       <div className="container flex h-16 items-center gap-3">
         {showBack && (
           <Button
@@ -35,9 +35,13 @@ export function AppHeader({
           </Button>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-bold leading-tight">{title}</h1>
+          <h1 className="truncate text-lg font-black leading-tight text-foreground">
+            {title}
+          </h1>
           {subtitle && (
-            <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {subtitle}
+            </p>
           )}
         </div>
         {actions && <div className="flex items-center gap-1">{actions}</div>}
