@@ -30,6 +30,7 @@ export function FriendsTab({
   const [settleTarget, setSettleTarget] = useState<FriendWithBalance | null>(
     null
   );
+  const [error, setError] = useState<string | null>(null);
 
   // Group balances by friend so each friend shows one row (with per-currency).
   const byFriend = useMemo(() => {
@@ -41,6 +42,18 @@ export function FriendsTab({
     }
     return Array.from(map.values());
   }, [friends, friendsWithBalances]);
+
+  async function handleDeleteFriend(friend: Friend) {
+    if (!repo) return;
+    setError(null);
+    try {
+      await runSyncing(() => repo.deleteFriend(friend));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not delete this friend."
+      );
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -67,6 +80,12 @@ export function FriendsTab({
           </Button>
         </div>
       </div>
+
+      {error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      )}
 
       {friends.length === 0 ? (
         <EmptyState
@@ -126,7 +145,7 @@ export function FriendsTab({
                     variant="ghost"
                     size="icon"
                     aria-label="Delete friend"
-                    onClick={() => runSyncing(() => repo!.deleteFriend(friend))}
+                    onClick={() => handleDeleteFriend(friend)}
                     disabled={!repo}
                   >
                     <Trash2 className="h-4 w-4 text-muted-foreground" />

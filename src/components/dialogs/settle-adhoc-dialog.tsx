@@ -6,6 +6,11 @@ import { ArrowRight } from "lucide-react";
 import type { FriendWithBalance } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
 import { currencySymbol } from "@/lib/currency";
+import {
+  centsToMoney,
+  parseMoneyInputToCents,
+  toCurrencyCents,
+} from "@/lib/money";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import {
@@ -47,9 +52,18 @@ export function SettleAdHocDialog({
 
   async function handleConfirm() {
     if (!target) return;
-    const amount = parseFloat(amountStr);
-    if (Number.isNaN(amount) || amount <= 0) {
+    const amountCents = parseMoneyInputToCents(amountStr);
+    if (amountCents === null) {
       setError("Amount must be greater than 0.");
+      return;
+    }
+    const outstandingCents = toCurrencyCents(Math.abs(target.netBalance));
+    if (amountCents > outstandingCents) {
+      setError(
+        `Amount cannot exceed the outstanding balance (${symbol}${Math.abs(
+          target.netBalance
+        ).toFixed(2)}).`
+      );
       return;
     }
     if (!repo) return;
@@ -57,7 +71,7 @@ export function SettleAdHocDialog({
       repo.recordAdHocPayment({
         fromFriendId: friendOwesYou ? target.friend.id : YOU_ID,
         toFriendId: friendOwesYou ? YOU_ID : target.friend.id,
-        amount,
+        amount: centsToMoney(amountCents),
         currency: target.currency,
         timestamp: Date.now(),
       })

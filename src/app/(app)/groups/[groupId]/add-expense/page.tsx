@@ -6,7 +6,9 @@ import { AlertCircle } from "lucide-react";
 
 import type { SplitType } from "@/lib/models";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { dateInputToLocalTimestamp, toDateInputValue } from "@/lib/dates";
 import { buildSplits } from "@/lib/splits";
+import { useAuth } from "@/hooks/use-auth";
 import { useGroupDetail } from "@/hooks/use-group-detail";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
@@ -32,6 +34,7 @@ export default function AddExpensePage({
   const router = useRouter();
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
+  const { user } = useAuth();
   const { members } = useGroupDetail(groupId);
 
   const participants = useMemo(
@@ -43,9 +46,7 @@ export default function AddExpensePage({
   const [amountStr, setAmountStr] = useState("");
   const [paidBy, setPaidBy] = useState<string>("");
   const [currency, setCurrency] = useState("USD");
-  const [dateStr, setDateStr] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
+  const [dateStr, setDateStr] = useState(() => toDateInputValue());
   const [splitType, setSplitType] = useState<SplitType>("EQUAL");
   const [split, setSplit] = useState<SplitState>({
     equalSelections: {},
@@ -54,6 +55,10 @@ export default function AddExpensePage({
   const [error, setError] = useState<string | null>(null);
 
   const amount = parseFloat(amountStr) || 0;
+  const currentUserMemberId = useMemo(
+    () => members.find((m) => m.linkedUid === user?.uid)?.id ?? "",
+    [members, user?.uid]
+  );
 
   // Default all members into the equal split as they load.
   useEffect(() => {
@@ -69,8 +74,10 @@ export default function AddExpensePage({
       }
       return changed ? { ...prev, equalSelections } : prev;
     });
-    if (!paidBy && participants[0]) setPaidBy(participants[0].id);
-  }, [participants, paidBy]);
+    if (!paidBy || !participants.some((p) => p.id === paidBy)) {
+      setPaidBy(currentUserMemberId || participants[0].id);
+    }
+  }, [participants, paidBy, currentUserMemberId]);
 
   async function handleSave() {
     if (!description.trim()) {
@@ -115,7 +122,7 @@ export default function AddExpensePage({
         paidById: paidBy,
         splitType,
         splits: result.splits,
-        timestamp: new Date(dateStr).getTime() || Date.now(),
+        timestamp: dateInputToLocalTimestamp(dateStr) ?? Date.now(),
         currency,
       })
     );

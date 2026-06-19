@@ -5,6 +5,11 @@ import { ArrowRight } from "lucide-react";
 
 import type { DebtOverview } from "@/lib/models";
 import { currencySymbol } from "@/lib/currency";
+import {
+  centsToMoney,
+  parseMoneyInputToCents,
+  toCurrencyCents,
+} from "@/lib/money";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import {
@@ -43,9 +48,18 @@ export function SettleGroupDialog({
 
   async function handleConfirm() {
     if (!repo || !debt) return;
-    const amount = parseFloat(amountStr);
-    if (Number.isNaN(amount) || amount <= 0) {
+    const amountCents = parseMoneyInputToCents(amountStr);
+    if (amountCents === null) {
       setError("Amount must be greater than 0.");
+      return;
+    }
+    const outstandingCents = toCurrencyCents(debt.amount);
+    if (amountCents > outstandingCents) {
+      setError(
+        `Amount cannot exceed the outstanding balance (${symbol}${debt.amount.toFixed(
+          2
+        )}).`
+      );
       return;
     }
     await runSyncing(() =>
@@ -53,7 +67,7 @@ export function SettleGroupDialog({
         groupId,
         fromMemberId: debt.debtor.id,
         toMemberId: debt.creditor.id,
-        amount,
+        amount: centsToMoney(amountCents),
         currency: debt.currency,
         timestamp: Date.now(),
       })

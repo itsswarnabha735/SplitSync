@@ -294,12 +294,7 @@ service cloud.firestore {
             && request.resource.data.linkedUid == request.auth.uid
           )
         ) && isFriendDoc(friendId);
-        allow delete: if isOwner(uid)
-          || (
-            signedIn()
-            && request.auth.uid != uid
-            && friendId == request.auth.uid
-          );
+        allow delete: if isOwner(uid);
       }
 
       match /adhocExpenses/{expenseId} {
@@ -336,7 +331,7 @@ service cloud.firestore {
       allow update: if isMetadataOnlyGroupUpdate(groupId)
         || isInviteAcceptance(groupId);
 
-      allow delete: if groupCreator(groupId);
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
 
       match /members/{memberId} {
         allow read: if groupMember(groupId);

@@ -24,26 +24,68 @@ export function useGroupDetail(groupId: string | null) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!repo || !groupId) return;
+    setGroup(null);
+    setMembers([]);
+    setExpenses([]);
+    setPayments([]);
+    setError(null);
+
+    if (!repo || !groupId) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     let gotGroup = false;
+    let active = true;
+    const handleError = (err: Error) => {
+      if (!active) return;
+      setGroup(null);
+      setMembers([]);
+      setExpenses([]);
+      setPayments([]);
+      setError(err.message || "Unable to load this group.");
+      setLoading(false);
+    };
+
     const unsubs = [
       repo.subscribeGroup(groupId, (g) => {
+        if (!active) return;
         setGroup(g);
         gotGroup = true;
         setLoading(false);
-      }),
-      repo.subscribeMembers(groupId, setMembers),
-      repo.subscribeExpenses(groupId, setExpenses),
-      repo.subscribePayments(groupId, setPayments),
+      }, handleError),
+      repo.subscribeMembers(
+        groupId,
+        (nextMembers) => {
+          if (active) setMembers(nextMembers);
+        },
+        handleError
+      ),
+      repo.subscribeExpenses(
+        groupId,
+        (nextExpenses) => {
+          if (active) setExpenses(nextExpenses);
+        },
+        handleError
+      ),
+      repo.subscribePayments(
+        groupId,
+        (nextPayments) => {
+          if (active) setPayments(nextPayments);
+        },
+        handleError
+      ),
     ];
     // Failsafe in case the group doc listener is slow.
     const t = setTimeout(() => {
-      if (!gotGroup) setLoading(false);
+      if (active && !gotGroup) setLoading(false);
     }, 4000);
     return () => {
+      active = false;
       clearTimeout(t);
       unsubs.forEach((u) => u());
     };
@@ -76,5 +118,6 @@ export function useGroupDetail(groupId: string | null) {
     simplifiedDebts,
     totalsByCurrency,
     loading,
+    error,
   };
 }

@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { calculateFriendBalances } from "@/lib/balances";
 import {
   AdHocExpense,
   AdHocPayment,
@@ -40,6 +41,7 @@ import {
 } from "./converters";
 
 type Cb<T> = (items: T) => void;
+type ErrorCb = (err: Error) => void;
 
 /** A prospective group member supplied when creating a group. */
 export interface NewGroupMember {
@@ -49,9 +51,10 @@ export interface NewGroupMember {
   linkedUid: string;
 }
 
-function snapshotError(label: string) {
+function snapshotError(label: string, onError?: ErrorCb) {
   return (err: Error) => {
     console.warn(`[SplitSync] ${label} listener failed:`, err.message);
+    onError?.(err);
   };
 }
 
@@ -83,7 +86,10 @@ export function makeRepository(uid: string) {
   // ----------------------------------------------------------------------
   // Group reads (multi-user shared, scoped via memberUids array-contains)
   // ----------------------------------------------------------------------
-  function subscribeGroups(cb: Cb<Group[]>): Unsubscribe {
+  function subscribeGroups(
+    cb: Cb<Group[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
     // Only filter server-side; sorting by createdAt is done client-side so the
     // query needs just the automatic single-field array-contains index (an
     // `array-contains` + `orderBy` combo would require a deployed composite
@@ -97,33 +103,58 @@ export function makeRepository(uid: string) {
           .sort((a, b) => b.createdAt - a.createdAt);
         cb(groups);
       },
-      snapshotError("groups")
+      snapshotError("groups", onError)
     );
   }
 
-  function subscribeGroup(groupId: string, cb: Cb<Group | null>): Unsubscribe {
+  function subscribeGroup(
+    groupId: string,
+    cb: Cb<Group | null>,
+    onError?: ErrorCb
+  ): Unsubscribe {
     return onSnapshot(
       groupDoc(groupId),
       (snap) => cb(snap.exists() ? toGroup(snap) : null),
-      snapshotError(`group/${groupId}`)
+      snapshotError(`group/${groupId}`, onError)
     );
   }
 
   function subscribeMembers(
     groupId: string,
-    cb: Cb<GroupMember[]>
+    cb: Cb<GroupMember[]>,
+    onError?: ErrorCb
   ): Unsubscribe {
-    return onSnapshot(membersRef(groupId), (snap) => cb(snap.docs.map(toMember)), snapshotError(`members/${groupId}`));
+    return onSnapshot(
+      membersRef(groupId),
+      (snap) => cb(snap.docs.map(toMember)),
+      snapshotError(`members/${groupId}`, onError)
+    );
   }
 
-  function subscribeExpenses(groupId: string, cb: Cb<Expense[]>): Unsubscribe {
+  function subscribeExpenses(
+    groupId: string,
+    cb: Cb<Expense[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
     const q = query(expensesRef(groupId), orderBy("timestamp", "desc"));
-    return onSnapshot(q, (snap) => cb(snap.docs.map(toExpense)), snapshotError(`expenses/${groupId}`));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toExpense)),
+      snapshotError(`expenses/${groupId}`, onError)
+    );
   }
 
-  function subscribePayments(groupId: string, cb: Cb<Payment[]>): Unsubscribe {
+  function subscribePayments(
+    groupId: string,
+    cb: Cb<Payment[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
     const q = query(paymentsRef(groupId), orderBy("timestamp", "desc"));
-    return onSnapshot(q, (snap) => cb(snap.docs.map(toPayment)), snapshotError(`payments/${groupId}`));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toPayment)),
+      snapshotError(`payments/${groupId}`, onError)
+    );
   }
 
   // ----------------------------------------------------------------------
@@ -247,17 +278,27 @@ export function makeRepository(uid: string) {
   async function deleteGroup(group: Group): Promise<void> {
     if (!group.id) return;
     const gid = group.id;
-    const [members, expenses, payments] = await Promise.all([
+    const [membersSnap, expensesSnap, paymentsSnap] = await Promise.all([
       getDocs(membersRef(gid)),
       getDocs(expensesRef(gid)),
       getDocs(paymentsRef(gid)),
     ]);
-    const batch = writeBatch(db);
-    members.forEach((d) => batch.delete(d.ref));
-    expenses.forEach((d) => batch.delete(d.ref));
-    payments.forEach((d) => batch.delete(d.ref));
-    batch.delete(groupDoc(gid));
-    await batch.commit();
+
+    const childDocs = [
+      ...membersSnap.docs,
+      ...expensesSnap.docs,
+      ...paymentsSnap.docs,
+    ];
+
+    for (let i = 0; i < childDocs.length; i += 450) {
+      const batch = writeBatch(db);
+      for (const d of childDocs.slice(i, i + 450)) {
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+    }
+
+    await deleteDoc(groupDoc(gid));
   }
 
   // ----------------------------------------------------------------------
@@ -359,14 +400,19 @@ export function makeRepository(uid: string) {
 
   async function deleteFriend(friend: Friend): Promise<void> {
     if (!friend.id) return;
-    const batch = writeBatch(db);
-    batch.delete(doc(friendsRef(), friend.id));
-    // Tear down the reciprocal back-link in the other user's list (their friend
-    // doc for us is keyed by our uid). Best-effort: only for linked users.
-    if (friend.linkedUid && friend.linkedUid !== uid) {
-      batch.delete(doc(db, "users", friend.linkedUid, "friends", uid));
+    const [expensesSnap, paymentsSnap] = await Promise.all([
+      getDocs(adhocExpensesRef()),
+      getDocs(adhocPaymentsRef()),
+    ]);
+    const balances = calculateFriendBalances(
+      [friend],
+      expensesSnap.docs.map(toAdHocExpense),
+      paymentsSnap.docs.map(toAdHocPayment)
+    );
+    if (balances.some((b) => Math.abs(b.netBalance) > 0.01)) {
+      throw new Error("Settle this friend before deleting them.");
     }
-    await batch.commit();
+    await deleteDoc(doc(friendsRef(), friend.id));
   }
 
   async function createAdHocExpenseWithSplits(params: {

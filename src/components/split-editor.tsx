@@ -100,8 +100,9 @@ export function SplitEditor({
     (s, p) => s + (parseFloat(value.exactInputs[p.id] ?? "") || 0),
     0
   );
-  const diff = amount - total;
-  const matches = Math.abs(diff) < 0.02;
+  const diffCents = Math.round(amount * 100) - Math.round(total * 100);
+  const diff = diffCents / 100;
+  const matches = diffCents === 0;
 
   return (
     <div className="space-y-2">

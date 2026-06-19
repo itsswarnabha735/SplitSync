@@ -39,36 +39,39 @@ export function buildSplits(params: {
         splits: [],
       };
     }
-    const splitAmount =
-      Math.round((amount / equalParticipantIds.length) * 100) / 100;
-    let remainingDiff = amount - splitAmount * equalParticipantIds.length;
-    for (const id of equalParticipantIds) {
-      let adjustment = 0;
-      if (remainingDiff > 0.01) {
-        remainingDiff -= 0.01;
-        adjustment = 0.01;
-      } else if (remainingDiff < -0.01) {
-        remainingDiff += 0.01;
-        adjustment = -0.01;
-      }
-      splits.push([id, roundCents(splitAmount + adjustment)]);
+    const totalCents = toCents(amount);
+    const baseCents = Math.floor(totalCents / equalParticipantIds.length);
+    const remainderCents = totalCents - baseCents * equalParticipantIds.length;
+    for (const [index, id] of equalParticipantIds.entries()) {
+      const cents = baseCents + (index < remainderCents ? 1 : 0);
+      splits.push([id, cents / 100]);
     }
     return { ok: true, splits };
   }
 
   // EXACT
-  const sum = Object.values(exactDistribution).reduce((a, b) => a + b, 0);
-  if (Math.abs(sum - amount) > 0.02) {
+  const exactEntries = Object.entries(exactDistribution);
+  if (exactEntries.some(([, custom]) => !Number.isFinite(custom) || custom < 0)) {
     return {
       ok: false,
-      error: `Sum of split amounts ($${sum.toFixed(
-        2
-      )}) must equal total amount ($${amount.toFixed(2)}).`,
+      error: "Exact split portions cannot be negative.",
       splits: [],
     };
   }
-  for (const [id, custom] of Object.entries(exactDistribution)) {
-    if (custom > 0) splits.push([id, custom]);
+  const normalized = exactEntries.map(([id, custom]) => [id, toCents(custom)] as const);
+  const sumCents = normalized.reduce((a, [, cents]) => a + cents, 0);
+  const totalCents = toCents(amount);
+  if (sumCents !== totalCents) {
+    return {
+      ok: false,
+      error: `Sum of split amounts ($${(sumCents / 100).toFixed(
+        2
+      )}) must equal total amount ($${(totalCents / 100).toFixed(2)}).`,
+      splits: [],
+    };
+  }
+  for (const [id, cents] of normalized) {
+    if (cents > 0) splits.push([id, cents / 100]);
   }
   if (splits.length === 0) {
     return {
@@ -80,8 +83,8 @@ export function buildSplits(params: {
   return { ok: true, splits };
 }
 
-function roundCents(n: number): number {
-  return Math.round(n * 100) / 100;
+function toCents(n: number): number {
+  return Math.round(n * 100);
 }
 
 export function splitsToMap(splits: SplitPair[]): Record<string, number> {

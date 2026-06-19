@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Friend, SplitType } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
@@ -38,9 +38,20 @@ export function AddAdHocExpenseDialog({
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
 
+  const [selectedFriendId, setSelectedFriendId] = useState("");
+  const selectedFriend = useMemo(
+    () => friends.find((f) => f.id === selectedFriendId) ?? friends[0] ?? null,
+    [friends, selectedFriendId]
+  );
   const participants = useMemo<Participant[]>(
-    () => [{ id: YOU_ID, name: "You" }, ...friends.map((f) => ({ id: f.id, name: f.name }))],
-    [friends]
+    () =>
+      selectedFriend
+        ? [
+            { id: YOU_ID, name: "You" },
+            { id: selectedFriend.id, name: selectedFriend.name },
+          ]
+        : [{ id: YOU_ID, name: "You" }],
+    [selectedFriend]
   );
 
   const [description, setDescription] = useState("");
@@ -55,9 +66,21 @@ export function AddAdHocExpenseDialog({
 
   const amount = parseFloat(amountStr) || 0;
 
+  useEffect(() => {
+    if (!selectedFriend) return;
+    if (selectedFriend.id !== selectedFriendId) {
+      setSelectedFriendId(selectedFriend.id);
+    }
+    setPaidBy((current) =>
+      current === YOU_ID || current === selectedFriend.id ? current : YOU_ID
+    );
+    setSplit(emptySplitState(participants));
+  }, [participants, selectedFriend, selectedFriendId]);
+
   function reset() {
     setDescription("");
     setAmountStr("");
+    setSelectedFriendId(friends[0]?.id ?? "");
     setPaidBy(YOU_ID);
     setCurrency("USD");
     setSplitType("EQUAL");
@@ -72,6 +95,10 @@ export function AddAdHocExpenseDialog({
     }
     if (amount <= 0) {
       setError("Amount must be greater than 0.");
+      return;
+    }
+    if (!selectedFriend) {
+      setError("Choose a friend for this expense.");
       return;
     }
     const equalIds = participants
@@ -171,6 +198,24 @@ export function AddAdHocExpenseDialog({
                 ))}
               </NativeSelect>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="adhoc-friend">Friend</Label>
+            <NativeSelect
+              id="adhoc-friend"
+              value={selectedFriend?.id ?? ""}
+              onChange={(e) => {
+                setSelectedFriendId(e.target.value);
+                setError(null);
+              }}
+            >
+              {friends.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </NativeSelect>
           </div>
 
           <div className="space-y-1.5">

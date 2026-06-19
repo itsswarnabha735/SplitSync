@@ -59,6 +59,7 @@ export default function GroupDetailPage({
     simplifiedDebts,
     totalsByCurrency,
     loading,
+    error,
   } = useGroupDetail(groupId);
 
   const [showInvite, setShowInvite] = useState(false);
@@ -84,8 +85,11 @@ export default function GroupDetailPage({
         <main className="container py-10">
           <EmptyState
             icon={Receipt}
-            title="Group not found"
-            description="It may have been deleted, or you no longer have access."
+            title={error ? "Cannot load group" : "Group not found"}
+            description={
+              error ||
+              "It may have been deleted, or you no longer have access."
+            }
           />
         </main>
       </div>

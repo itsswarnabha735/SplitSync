@@ -32,6 +32,22 @@ describe("buildSplits - EQUAL", () => {
     expect(amounts).toEqual([33.33, 33.33, 33.34]);
   });
 
+  it("does not lose a cent for small remainders", () => {
+    const res = buildSplits({
+      splitType: "EQUAL",
+      amount: 10,
+      equalParticipantIds: ["a", "b", "c"],
+      exactDistribution: {},
+    });
+    expect(res.ok).toBe(true);
+    expect(res.splits).toEqual([
+      ["a", 3.34],
+      ["b", 3.33],
+      ["c", 3.33],
+    ]);
+    expect(res.splits.reduce((s, [, amt]) => s + amt, 0)).toBeCloseTo(10, 2);
+  });
+
   it("errors when no participants selected", () => {
     const res = buildSplits({
       splitType: "EQUAL",
@@ -65,6 +81,17 @@ describe("buildSplits - EXACT", () => {
     });
     expect(res.ok).toBe(false);
     expect(res.error).toContain("must equal total");
+  });
+
+  it("rejects negative portions even when they sum to the total", () => {
+    const res = buildSplits({
+      splitType: "EXACT",
+      amount: 100,
+      equalParticipantIds: [],
+      exactDistribution: { a: 120, b: -20 },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("cannot be negative");
   });
 
   it("drops zero portions but errors if all are zero", () => {
