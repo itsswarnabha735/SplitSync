@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
+import { useForegroundPushMessages } from "@/hooks/use-push-notifications";
 import { useUiStore } from "@/stores/ui-store";
 
 export default function AppLayout({
@@ -15,6 +16,7 @@ export default function AppLayout({
   const { user, loading } = useAuth();
   const router = useRouter();
   const isSyncing = useUiStore((s) => s.isSyncing);
+  useForegroundPushMessages();
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -40,6 +42,7 @@ export default function AppLayout({
         </div>
       )}
       <SyncStatusAnnouncer />
+      <AppToast />
       {children}
     </div>
   );
@@ -52,5 +55,37 @@ function SyncStatusAnnouncer() {
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
       {statusMessage}
     </div>
+  );
+}
+
+function AppToast() {
+  const toast = useUiStore((s) => s.toast);
+  const clearToast = useUiStore((s) => s.clearToast);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(clearToast, 5000);
+    return () => window.clearTimeout(t);
+  }, [clearToast, toast]);
+
+  if (!toast) return null;
+
+  return (
+    <button
+      type="button"
+      className="fixed right-4 top-20 z-50 max-w-sm rounded-xl border border-primary/20 bg-card px-4 py-3 text-left shadow-xl shadow-foreground/10"
+      onClick={() => {
+        if (toast.targetUrl) router.push(toast.targetUrl);
+        clearToast();
+      }}
+    >
+      <p className="text-sm font-black">{toast.title}</p>
+      {toast.body && (
+        <p className="mt-1 text-xs font-medium text-muted-foreground">
+          {toast.body}
+        </p>
+      )}
+    </button>
   );
 }

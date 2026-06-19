@@ -12,6 +12,9 @@ import {
   Group,
   GroupInvite,
   GroupMember,
+  Notification,
+  NotificationPreference,
+  NotificationType,
   Payment,
   SplitType,
 } from "@/lib/models";
@@ -34,6 +37,57 @@ function splitMap(v: unknown): Record<string, number> {
 }
 function splitType(v: unknown): SplitType {
   return v === "EXACT" ? "EXACT" : "EQUAL";
+}
+function notificationType(v: unknown): NotificationType {
+  const known: NotificationType[] = [
+    "group_invite_received",
+    "group_invite_accepted",
+    "group_expense_created",
+    "group_expense_deleted",
+    "group_settlement_created",
+    "group_settlement_deleted",
+    "group_fully_settled",
+    "friend_added",
+    "adhoc_expense_created",
+    "adhoc_expense_deleted",
+    "adhoc_settlement_created",
+    "adhoc_settlement_deleted",
+  ];
+  return typeof v === "string" && known.includes(v as NotificationType)
+    ? (v as NotificationType)
+    : "group_expense_created";
+}
+function stringArray(v: unknown): string[] {
+  return Array.isArray(v)
+    ? (v.filter((x) => typeof x === "string") as string[])
+    : [];
+}
+function sourceMap(v: unknown): Notification["source"] {
+  if (!v || typeof v !== "object") return { collection: "", id: "" };
+  const data = v as Record<string, unknown>;
+  return {
+    collection: str(data.collection),
+    id: str(data.id),
+    groupId: str(data.groupId) || undefined,
+    currency: str(data.currency) || undefined,
+    amount: typeof data.amount === "number" ? data.amount : undefined,
+    tags: stringArray(data.tags),
+  };
+}
+function channelMap(
+  v: unknown
+): NotificationPreference["eventChannels"] {
+  if (!v || typeof v !== "object") return {};
+  const out: NotificationPreference["eventChannels"] = {};
+  for (const [key, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const value = raw as Record<string, unknown>;
+    out[key as NotificationType] = {
+      inApp: typeof value.inApp === "boolean" ? value.inApp : undefined,
+      push: typeof value.push === "boolean" ? value.push : undefined,
+    };
+  }
+  return out;
 }
 
 export function toGroup(d: AnySnap): Group {
@@ -73,6 +127,7 @@ export function toExpense(d: AnySnap): Expense {
     timestamp: num(data.timestamp),
     currency: str(data.currency, "USD"),
     splits: splitMap(data.splits),
+    createdByUid: str(data.createdByUid) || undefined,
   };
 }
 
@@ -86,6 +141,7 @@ export function toPayment(d: AnySnap): Payment {
     amount: num(data.amount),
     timestamp: num(data.timestamp),
     currency: str(data.currency, "USD"),
+    createdByUid: str(data.createdByUid) || undefined,
   };
 }
 
@@ -98,6 +154,7 @@ export function toFriend(d: AnySnap): Friend {
     phone: str(data.phone),
     createdAt: num(data.createdAt),
     linkedUid: str(data.linkedUid),
+    createdByUid: str(data.createdByUid) || undefined,
   };
 }
 
@@ -112,6 +169,10 @@ export function toAdHocExpense(d: AnySnap): AdHocExpense {
     timestamp: num(data.timestamp),
     currency: str(data.currency, "USD"),
     splits: splitMap(data.splits),
+    createdByUid: str(data.createdByUid) || undefined,
+    mirroredFromPath: str(data.mirroredFromPath) || undefined,
+    mirroredFromUid: str(data.mirroredFromUid) || undefined,
+    originalId: str(data.originalId) || undefined,
   };
 }
 
@@ -124,6 +185,10 @@ export function toAdHocPayment(d: AnySnap): AdHocPayment {
     amount: num(data.amount),
     timestamp: num(data.timestamp),
     currency: str(data.currency, "USD"),
+    createdByUid: str(data.createdByUid) || undefined,
+    mirroredFromPath: str(data.mirroredFromPath) || undefined,
+    mirroredFromUid: str(data.mirroredFromUid) || undefined,
+    originalId: str(data.originalId) || undefined,
   };
 }
 
@@ -136,5 +201,31 @@ export function toInvite(d: AnySnap): GroupInvite {
     invitedByUid: str(data.invitedByUid),
     invitedByName: str(data.invitedByName),
     invitedAt: num(data.invitedAt),
+  };
+}
+
+export function toNotification(d: AnySnap): Notification {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    type: notificationType(data.type),
+    title: str(data.title),
+    body: str(data.body),
+    actorUid: str(data.actorUid),
+    targetUrl: str(data.targetUrl, "/dashboard"),
+    createdAt: num(data.createdAt),
+    readAt: data.readAt === null ? null : num(data.readAt, 0) || null,
+    eventId: str(data.eventId),
+    source: sourceMap(data.source),
+  };
+}
+
+export function toNotificationPreference(d: AnySnap): NotificationPreference {
+  const data = d.data() ?? {};
+  return {
+    pushEnabled: data.pushEnabled === true,
+    eventChannels: channelMap(data.eventChannels),
+    largeExpenseThresholds: splitMap(data.largeExpenseThresholds),
+    updatedAt: num(data.updatedAt),
   };
 }

@@ -189,8 +189,8 @@ export function AddAdHocExpenseDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="adhoc-amount">Amount</Label>
               <Input
                 id="adhoc-amount"
@@ -203,7 +203,7 @@ export function AddAdHocExpenseDialog({
                 placeholder="0.00"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="adhoc-currency">Currency</Label>
               <NativeSelect
                 id="adhoc-currency"

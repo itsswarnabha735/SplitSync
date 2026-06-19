@@ -32,8 +32,16 @@ service cloud.firestore {
       return value is number && value >= 0 && value <= 4102444800000;
     }
 
+    function isNullableMillis(value) {
+      return value == null || isMillis(value);
+    }
+
     function isCurrency(value) {
       return value in ["USD", "EUR", "GBP", "INR", "JPY", "CAD", "AUD"];
+    }
+
+    function isActorUid(value) {
+      return value is string && value == request.auth.uid;
     }
 
     function isSplitType(value) {
@@ -169,7 +177,7 @@ service cloud.firestore {
     function isExpenseDoc(groupId, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "description", "amount", "paidById", "splitType",
-          "timestamp", "currency", "splits"
+          "timestamp", "currency", "splits", "createdByUid"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -183,13 +191,17 @@ service cloud.firestore {
         && isSplitType(request.resource.data.splitType)
         && isMillis(request.resource.data.timestamp)
         && isCurrency(request.resource.data.currency)
-        && isSmallStringMap(request.resource.data.splits);
+        && isSmallStringMap(request.resource.data.splits)
+        && (
+          !("createdByUid" in request.resource.data)
+          || isActorUid(request.resource.data.createdByUid)
+        );
     }
 
     function isPaymentDoc(groupId, paymentId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "fromMemberId", "toMemberId", "amount",
-          "timestamp", "currency"
+          "timestamp", "currency", "createdByUid"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "fromMemberId", "toMemberId", "amount",
@@ -202,12 +214,16 @@ service cloud.firestore {
         && memberExists(groupId, request.resource.data.toMemberId)
         && isMoney(request.resource.data.amount)
         && isMillis(request.resource.data.timestamp)
-        && isCurrency(request.resource.data.currency);
+        && isCurrency(request.resource.data.currency)
+        && (
+          !("createdByUid" in request.resource.data)
+          || isActorUid(request.resource.data.createdByUid)
+        );
     }
 
     function isFriendDoc(friendId) {
       return request.resource.data.keys().hasOnly([
-          "id", "name", "email", "phone", "createdAt", "linkedUid"
+          "id", "name", "email", "phone", "createdAt", "linkedUid", "createdByUid"
         ])
         && request.resource.data.keys().hasAll([
           "id", "name", "email", "phone", "createdAt", "linkedUid"
@@ -217,7 +233,11 @@ service cloud.firestore {
         && isOptionalEmail(request.resource.data.email)
         && isString(request.resource.data.phone, 40)
         && isMillis(request.resource.data.createdAt)
-        && isString(request.resource.data.linkedUid, 128);
+        && isString(request.resource.data.linkedUid, 128)
+        && (
+          !("createdByUid" in request.resource.data)
+          || isActorUid(request.resource.data.createdByUid)
+        );
     }
 
     function selfOrFriend(uid, participantId) {
@@ -228,7 +248,8 @@ service cloud.firestore {
     function isAdHocExpenseDoc(uid, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "description", "amount", "paidByFriendId", "splitType",
-          "timestamp", "currency", "splits"
+          "timestamp", "currency", "splits", "createdByUid", "mirroredFromPath",
+          "mirroredFromUid", "originalId"
         ])
         && request.resource.data.keys().hasAll([
           "id", "description", "amount", "paidByFriendId", "splitType",
@@ -241,12 +262,18 @@ service cloud.firestore {
         && isSplitType(request.resource.data.splitType)
         && isMillis(request.resource.data.timestamp)
         && isCurrency(request.resource.data.currency)
-        && isSmallStringMap(request.resource.data.splits);
+        && isSmallStringMap(request.resource.data.splits)
+        && (
+          !("createdByUid" in request.resource.data)
+          || isActorUid(request.resource.data.createdByUid)
+        )
+        && !("mirroredFromPath" in request.resource.data);
     }
 
     function isAdHocPaymentDoc(uid, paymentId) {
       return request.resource.data.keys().hasOnly([
-          "id", "fromFriendId", "toFriendId", "amount", "timestamp", "currency"
+          "id", "fromFriendId", "toFriendId", "amount", "timestamp", "currency",
+          "createdByUid", "mirroredFromPath", "mirroredFromUid", "originalId"
         ])
         && request.resource.data.keys().hasAll([
           "id", "fromFriendId", "toFriendId", "amount", "timestamp", "currency"
@@ -257,7 +284,12 @@ service cloud.firestore {
         && selfOrFriend(uid, request.resource.data.toFriendId)
         && isMoney(request.resource.data.amount)
         && isMillis(request.resource.data.timestamp)
-        && isCurrency(request.resource.data.currency);
+        && isCurrency(request.resource.data.currency)
+        && (
+          !("createdByUid" in request.resource.data)
+          || isActorUid(request.resource.data.createdByUid)
+        )
+        && !("mirroredFromPath" in request.resource.data);
     }
 
     function isInviteDoc(inviteId) {
@@ -273,6 +305,62 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.groupName, 100)
         && isNonEmptyString(request.resource.data.invitedByName, 80)
         && isMillis(request.resource.data.invitedAt);
+    }
+
+    function isNotificationType(value) {
+      return value in [
+        "group_invite_received", "group_invite_accepted",
+        "group_expense_created", "group_expense_deleted",
+        "group_settlement_created", "group_settlement_deleted",
+        "group_fully_settled", "friend_added",
+        "adhoc_expense_created", "adhoc_expense_deleted",
+        "adhoc_settlement_created", "adhoc_settlement_deleted"
+      ];
+    }
+
+    function isNotificationDoc() {
+      return request.resource.data.keys().hasOnly([
+          "type", "title", "body", "actorUid", "targetUrl", "createdAt",
+          "readAt", "eventId", "source"
+        ])
+        && request.resource.data.keys().hasAll([
+          "type", "title", "body", "actorUid", "targetUrl", "createdAt",
+          "readAt", "eventId", "source"
+        ])
+        && isNotificationType(request.resource.data.type)
+        && isNonEmptyString(request.resource.data.title, 120)
+        && isString(request.resource.data.body, 500)
+        && isString(request.resource.data.actorUid, 128)
+        && isNonEmptyString(request.resource.data.targetUrl, 500)
+        && isMillis(request.resource.data.createdAt)
+        && isNullableMillis(request.resource.data.readAt)
+        && isNonEmptyString(request.resource.data.eventId, 500)
+        && request.resource.data.source is map;
+    }
+
+    function isNotificationPreferenceDoc() {
+      return request.resource.data.keys().hasOnly([
+          "pushEnabled", "eventChannels", "largeExpenseThresholds", "updatedAt"
+        ])
+        && request.resource.data.pushEnabled is bool
+        && request.resource.data.eventChannels is map
+        && request.resource.data.eventChannels.keys().size() <= 50
+        && request.resource.data.largeExpenseThresholds is map
+        && request.resource.data.largeExpenseThresholds.keys().size() <= 20
+        && isMillis(request.resource.data.updatedAt);
+    }
+
+    function isFcmTokenDoc() {
+      return request.resource.data.keys().hasOnly([
+          "token", "deviceLabel", "userAgent", "createdAt", "updatedAt",
+          "lastSeenAt"
+        ])
+        && isNonEmptyString(request.resource.data.token, 4096)
+        && isString(request.resource.data.deviceLabel, 120)
+        && isString(request.resource.data.userAgent, 500)
+        && isMillis(request.resource.data.createdAt)
+        && isMillis(request.resource.data.updatedAt)
+        && isMillis(request.resource.data.lastSeenAt);
     }
 
     // --- Users ---------------------------------------------------------------
@@ -300,13 +388,13 @@ service cloud.firestore {
       match /adhocExpenses/{expenseId} {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) && isAdHocExpenseDoc(uid, expenseId);
-        allow delete: if isOwner(uid);
+        allow delete: if isOwner(uid) && !("mirroredFromPath" in resource.data);
       }
 
       match /adhocPayments/{paymentId} {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) && isAdHocPaymentDoc(uid, paymentId);
-        allow delete: if isOwner(uid);
+        allow delete: if isOwner(uid) && !("mirroredFromPath" in resource.data);
       }
 
       match /groupInvites/{inviteId} {
@@ -316,6 +404,29 @@ service cloud.firestore {
           && isInviteDoc(inviteId)
           && groupMember(request.resource.data.groupId);
         allow update: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isOwner(uid);
+        allow create: if false;
+        allow update: if isOwner(uid)
+          && isNotificationDoc()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readAt"]);
+        allow delete: if isOwner(uid);
+      }
+
+      match /notificationPreferences/{preferenceId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && preferenceId == "default"
+          && isNotificationPreferenceDoc();
+        allow delete: if false;
+      }
+
+      match /fcmTokens/{tokenId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isFcmTokenDoc();
+        allow delete: if isOwner(uid);
       }
     }
 

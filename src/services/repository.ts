@@ -3,12 +3,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type Unsubscribe,
@@ -20,10 +22,13 @@ import {
   AdHocExpense,
   AdHocPayment,
   Expense,
+  FcmToken,
   Friend,
   Group,
   GroupInvite,
   GroupMember,
+  Notification,
+  NotificationPreference,
   Payment,
   SplitType,
 } from "@/lib/models";
@@ -37,6 +42,8 @@ import {
   toGroup,
   toInvite,
   toMember,
+  toNotification,
+  toNotificationPreference,
   toPayment,
 } from "./converters";
 
@@ -83,6 +90,14 @@ export function makeRepository(uid: string) {
   const adhocPaymentsRef = () => collection(db, "users", uid, "adhocPayments");
   const groupInvitesRef = (u: string = uid) =>
     collection(db, "users", u, "groupInvites");
+  const notificationsRef = () => collection(db, "users", uid, "notifications");
+  const notificationDoc = (notificationId: string) =>
+    doc(db, "users", uid, "notifications", notificationId);
+  const notificationPreferencesDoc = () =>
+    doc(db, "users", uid, "notificationPreferences", "default");
+  const fcmTokensRef = () => collection(db, "users", uid, "fcmTokens");
+  const fcmTokenDoc = (tokenHash: string) =>
+    doc(db, "users", uid, "fcmTokens", tokenHash);
 
   // ----------------------------------------------------------------------
   // Group reads (multi-user shared, scoped via memberUids array-contains)
@@ -254,6 +269,7 @@ export function makeRepository(uid: string) {
       timestamp: params.timestamp ?? Date.now(),
       currency: params.currency ?? "USD",
       splits: splitsToMap(params.splits),
+      createdByUid: uid,
     };
     await setDoc(ref, expense);
   }
@@ -267,7 +283,7 @@ export function makeRepository(uid: string) {
     payment: Omit<Payment, "id">
   ): Promise<void> {
     const ref = doc(paymentsRef(payment.groupId));
-    await setDoc(ref, { ...payment, id: ref.id });
+    await setDoc(ref, { ...payment, id: ref.id, createdByUid: uid });
   }
 
   async function deletePayment(payment: Payment): Promise<void> {
@@ -358,6 +374,7 @@ export function makeRepository(uid: string) {
       phone: phone.trim(),
       createdAt: Date.now(),
       linkedUid,
+      createdByUid: uid,
     };
     await setDoc(ref, friend);
     return ref.id;
@@ -383,6 +400,7 @@ export function makeRepository(uid: string) {
       phone: "",
       createdAt: now,
       linkedUid: target.uid,
+      createdByUid: uid,
     };
     const theirs: Friend = {
       id: uid,
@@ -391,6 +409,7 @@ export function makeRepository(uid: string) {
       phone: "",
       createdAt: now,
       linkedUid: uid,
+      createdByUid: uid,
     };
 
     const batch = writeBatch(db);
@@ -435,6 +454,7 @@ export function makeRepository(uid: string) {
       timestamp: params.timestamp ?? Date.now(),
       currency: params.currency ?? "USD",
       splits: splitsToMap(params.splits),
+      createdByUid: uid,
     };
     await setDoc(ref, expense);
     return ref.id;
@@ -449,7 +469,7 @@ export function makeRepository(uid: string) {
     payment: Omit<AdHocPayment, "id">
   ): Promise<void> {
     const ref = doc(adhocPaymentsRef());
-    await setDoc(ref, { ...payment, id: ref.id });
+    await setDoc(ref, { ...payment, id: ref.id, createdByUid: uid });
   }
 
   async function deleteAdHocPayment(payment: AdHocPayment): Promise<void> {
@@ -531,6 +551,98 @@ export function makeRepository(uid: string) {
     await deleteDoc(doc(groupInvitesRef(), invite.id));
   }
 
+  // ----------------------------------------------------------------------
+  // Notifications + browser push registration
+  // ----------------------------------------------------------------------
+  function subscribeNotifications(
+    cb: Cb<Notification[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(notificationsRef(), orderBy("createdAt", "desc"), limit(50));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toNotification)),
+      snapshotError("notifications", onError)
+    );
+  }
+
+  function subscribeNotificationPreferences(
+    cb: Cb<NotificationPreference | null>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    return onSnapshot(
+      notificationPreferencesDoc(),
+      (snap) => cb(snap.exists() ? toNotificationPreference(snap) : null),
+      snapshotError("notificationPreferences", onError)
+    );
+  }
+
+  async function markNotificationRead(notificationId: string): Promise<void> {
+    if (!notificationId) return;
+    await updateDoc(notificationDoc(notificationId), { readAt: Date.now() });
+  }
+
+  async function markAllNotificationsRead(): Promise<void> {
+    const snap = await getDocs(query(notificationsRef(), where("readAt", "==", null)));
+    const batch = writeBatch(db);
+    const now = Date.now();
+    for (const d of snap.docs) {
+      batch.update(d.ref, { readAt: now });
+    }
+    await batch.commit();
+  }
+
+  async function updateNotificationPreferences(
+    patch: Partial<NotificationPreference>
+  ): Promise<void> {
+    const ref = notificationPreferencesDoc();
+    const existing = await getDoc(ref);
+    const current = existing.exists()
+      ? toNotificationPreference(existing)
+      : {
+          pushEnabled: false,
+          eventChannels: {},
+          largeExpenseThresholds: {},
+          updatedAt: 0,
+        };
+    await setDoc(
+      ref,
+      {
+        ...current,
+        ...patch,
+        updatedAt: Date.now(),
+      },
+      { merge: false }
+    );
+  }
+
+  async function saveFcmToken(params: {
+    tokenHash: string;
+    token: string;
+    deviceLabel: string;
+    userAgent: string;
+  }): Promise<void> {
+    const now = Date.now();
+    const ref = fcmTokenDoc(params.tokenHash);
+    await setDoc(
+      ref,
+      {
+        token: params.token,
+        deviceLabel: params.deviceLabel,
+        userAgent: params.userAgent,
+        createdAt: now,
+        updatedAt: now,
+        lastSeenAt: now,
+      } satisfies Omit<FcmToken, "id">,
+      { merge: true }
+    );
+  }
+
+  async function deleteFcmToken(tokenHash: string): Promise<void> {
+    if (!tokenHash) return;
+    await deleteDoc(fcmTokenDoc(tokenHash));
+  }
+
   return {
     uid,
     subscribeGroups,
@@ -559,6 +671,13 @@ export function makeRepository(uid: string) {
     inviteToGroupByEmail,
     acceptInvite,
     declineInvite,
+    subscribeNotifications,
+    subscribeNotificationPreferences,
+    markNotificationRead,
+    markAllNotificationsRead,
+    updateNotificationPreferences,
+    saveFcmToken,
+    deleteFcmToken,
   };
 }
 

@@ -52,6 +52,8 @@ export interface Expense {
   currency: string;
   /** Embedded splits: memberId -> portion owed. */
   splits: Record<string, number>;
+  /** uid of the user who created the ledger entry. */
+  createdByUid?: string;
 }
 
 export interface Payment {
@@ -62,6 +64,8 @@ export interface Payment {
   amount: number;
   timestamp: number;
   currency: string;
+  /** uid of the user who recorded the settlement. */
+  createdByUid?: string;
 }
 
 export interface Friend {
@@ -72,6 +76,8 @@ export interface Friend {
   createdAt: number;
   /** uid of a SplitSync user this friend is linked to, when one exists. */
   linkedUid: string;
+  /** uid of the user who created this friend row. */
+  createdByUid?: string;
 }
 
 export interface AdHocExpense {
@@ -85,6 +91,12 @@ export interface AdHocExpense {
   currency: string;
   /** Embedded splits: participantId -> portion owed. */
   splits: Record<string, number>;
+  /** uid of the user who created the ledger entry. */
+  createdByUid?: string;
+  /** Present on server-created mirror docs in a linked friend's ledger. */
+  mirroredFromPath?: string;
+  mirroredFromUid?: string;
+  originalId?: string;
 }
 
 export interface AdHocPayment {
@@ -94,6 +106,12 @@ export interface AdHocPayment {
   amount: number;
   timestamp: number;
   currency: string;
+  /** uid of the user who recorded the settlement. */
+  createdByUid?: string;
+  /** Present on server-created mirror docs in a linked friend's ledger. */
+  mirroredFromPath?: string;
+  mirroredFromUid?: string;
+  originalId?: string;
 }
 
 export interface GroupInvite {
@@ -152,4 +170,60 @@ export interface AdHocSplit {
   adhocExpenseId: string;
   participantFriendId: string;
   amount: number;
+}
+
+export type NotificationType =
+  | "group_invite_received"
+  | "group_invite_accepted"
+  | "group_expense_created"
+  | "group_expense_deleted"
+  | "group_settlement_created"
+  | "group_settlement_deleted"
+  | "group_fully_settled"
+  | "friend_added"
+  | "adhoc_expense_created"
+  | "adhoc_expense_deleted"
+  | "adhoc_settlement_created"
+  | "adhoc_settlement_deleted";
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  actorUid: string;
+  targetUrl: string;
+  createdAt: number;
+  readAt: number | null;
+  eventId: string;
+  source: {
+    collection: string;
+    id: string;
+    groupId?: string;
+    currency?: string;
+    amount?: number;
+    tags?: string[];
+  };
+}
+
+export type NotificationChannelPreference = {
+  inApp?: boolean;
+  push?: boolean;
+};
+
+export interface NotificationPreference {
+  pushEnabled: boolean;
+  eventChannels: Partial<Record<NotificationType, NotificationChannelPreference>>;
+  largeExpenseThresholds: Record<string, number>;
+  updatedAt: number;
+}
+
+export interface FcmToken {
+  id: string;
+  token: string;
+  deviceLabel: string;
+  userAgent: string;
+  createdAt: number;
+  updatedAt: number;
+  lastSeenAt: number;
 }

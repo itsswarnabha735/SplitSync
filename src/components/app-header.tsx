@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface AppHeaderProps {
   title: string;
@@ -44,7 +45,10 @@ export function AppHeader({
             </p>
           )}
         </div>
-        {actions && <div className="flex items-center gap-1">{actions}</div>}
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          {actions}
+        </div>
       </div>
     </header>
   );

@@ -210,8 +210,8 @@ export default function AddExpensePage({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="exp-amount">Amount</Label>
               <Input
                 id="exp-amount"
@@ -224,7 +224,7 @@ export default function AddExpensePage({
                 placeholder="0.00"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="exp-paidby">Paid by</Label>
               <NativeSelect
                 id="exp-paidby"
@@ -244,8 +244,8 @@ export default function AddExpensePage({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="exp-date">Date</Label>
               <Input
                 id="exp-date"
@@ -254,7 +254,7 @@ export default function AddExpensePage({
                 onChange={(e) => setDateStr(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="exp-currency">Currency</Label>
               <NativeSelect
                 id="exp-currency"

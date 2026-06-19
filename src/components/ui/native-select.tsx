@@ -8,11 +8,11 @@ const NativeSelect = React.forwardRef<
   React.SelectHTMLAttributes<HTMLSelectElement>
 >(({ className, children, ...props }, ref) => {
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <select
         ref={ref}
         className={cn(
-          "flex h-11 w-full appearance-none rounded-xl border border-input bg-card/80 px-3.5 py-2 pr-9 text-sm shadow-inner shadow-foreground/[0.02] ring-offset-background transition-colors focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-11 w-full min-w-0 appearance-none rounded-xl border border-input bg-card/80 px-3.5 py-2 pr-9 text-sm shadow-inner shadow-foreground/[0.02] ring-offset-background transition-colors focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}

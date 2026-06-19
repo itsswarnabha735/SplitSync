@@ -18,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupsTab } from "@/components/dashboard/groups-tab";
 import { FriendsTab } from "@/components/dashboard/friends-tab";
+import { NotificationSettings } from "@/components/notification-settings";
 
 export default function DashboardPage() {
   const { user, displayName } = useAuth();
@@ -201,28 +202,31 @@ export default function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card className="space-y-4 border-primary/10 p-5">
-              <div className="flex items-center gap-3">
-                <div className="social-gradient surface-glow flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white">
-                  {displayName.charAt(0).toUpperCase()}
+            <div className="space-y-3">
+              <NotificationSettings />
+              <Card className="space-y-4 border-primary/10 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="social-gradient surface-glow flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white">
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold">{displayName}</p>
+                    <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
+                      <Mail className="h-3.5 w-3.5" />
+                      {user?.email}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-bold">{displayName}</p>
-                  <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5" />
-                    {user?.email}
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => signOut()}
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </Button>
-            </Card>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => signOut()}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </Button>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>

@@ -150,6 +150,13 @@ export function getFirebaseAuth(): Auth {
   return auth;
 }
 
+export function getFirebaseApp(): FirebaseApp {
+  if (!firebaseApp) {
+    throw new Error(configError?.message ?? "Firebase app is unavailable.");
+  }
+  return firebaseApp;
+}
+
 export function getFirestoreDb(): Firestore {
   if (!db) {
     throw new Error(configError?.message ?? "Firestore is unavailable.");

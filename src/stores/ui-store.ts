@@ -9,10 +9,17 @@ interface UiState {
   validationError: string | null;
   isSyncing: boolean;
   statusMessage: string | null;
+  toast: {
+    title: string;
+    body?: string;
+    targetUrl?: string;
+  } | null;
   setValidationError: (msg: string | null) => void;
   clearValidationError: () => void;
   setSyncing: (syncing: boolean) => void;
   setStatusMessage: (msg: string | null) => void;
+  showToast: (toast: { title: string; body?: string; targetUrl?: string }) => void;
+  clearToast: () => void;
   /** Wraps an async write so the global sync indicator reflects in-flight ops. */
   runSyncing: <T>(
     fn: () => Promise<T>,
@@ -28,10 +35,13 @@ export const useUiStore = create<UiState>((set) => ({
   validationError: null,
   isSyncing: false,
   statusMessage: null,
+  toast: null,
   setValidationError: (msg) => set({ validationError: msg }),
   clearValidationError: () => set({ validationError: null }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setStatusMessage: (msg) => set({ statusMessage: msg }),
+  showToast: (toast) => set({ toast }),
+  clearToast: () => set({ toast: null }),
   runSyncing: async (fn, messages) => {
     set({
       isSyncing: true,
