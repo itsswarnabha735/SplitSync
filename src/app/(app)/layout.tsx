@@ -22,9 +22,13 @@ export default function AppLayout({
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <main
+        id="main-content"
+        className="flex min-h-screen items-center justify-center"
+        aria-label="Loading SplitSync"
+      >
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
+      </main>
     );
   }
 
@@ -35,7 +39,18 @@ export default function AppLayout({
           <div className="h-full w-1/3 animate-[loading_1s_ease-in-out_infinite] bg-primary" />
         </div>
       )}
+      <SyncStatusAnnouncer />
       {children}
+    </div>
+  );
+}
+
+function SyncStatusAnnouncer() {
+  const statusMessage = useUiStore((s) => s.statusMessage);
+
+  return (
+    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {statusMessage}
     </div>
   );
 }

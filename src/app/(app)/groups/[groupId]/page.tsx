@@ -7,13 +7,14 @@ import {
   BookOpen,
   CheckCircle2,
   Lightbulb,
+  MoreVertical,
   Plus,
   Receipt,
   Trash2,
   UserPlus,
 } from "lucide-react";
 
-import type { DebtOverview } from "@/lib/models";
+import type { DebtOverview, Expense, Payment } from "@/lib/models";
 import { netBalance } from "@/lib/models";
 import { currencySymbol, formatMoney } from "@/lib/currency";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,6 +29,19 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { InviteMemberDialog } from "@/components/dialogs/invite-member-dialog";
 import { SettleGroupDialog } from "@/components/dialogs/settle-group-dialog";
 
@@ -38,6 +52,47 @@ function formatDate(ts: number): string {
     year: "numeric",
   });
 }
+
+function RowActions({
+  label,
+  deleteLabel,
+  onDelete,
+}: {
+  label: string;
+  deleteLabel: string;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 shrink-0"
+          aria-label={`Actions for ${label}`}
+        >
+          <MoreVertical className="h-5 w-5 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={(event) => {
+            event.preventDefault();
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+          {deleteLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+type PendingDelete =
+  | { kind: "expense"; item: Expense }
+  | { kind: "payment"; item: Payment };
 
 export default function GroupDetailPage({
   params,
@@ -64,6 +119,11 @@ export default function GroupDetailPage({
 
   const [showInvite, setShowInvite] = useState(false);
   const [settleDebt, setSettleDebt] = useState<DebtOverview | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
+    null
+  );
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const uid = user?.uid;
   const labelForMember = useMemo(() => {
@@ -78,11 +138,73 @@ export default function GroupDetailPage({
     return (id: string) => map.get(id) ?? "Unknown";
   }, [members, uid]);
 
+  async function confirmDelete() {
+    if (!repo || !pendingDelete) return;
+    const next = pendingDelete;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await runSyncing(
+        () =>
+          next.kind === "expense"
+            ? repo.deleteExpense(next.item)
+            : repo.deletePayment(next.item),
+        {
+          loading:
+            next.kind === "expense"
+              ? "Deleting expense..."
+              : "Deleting settlement...",
+          success:
+            next.kind === "expense"
+              ? "Expense deleted."
+              : "Settlement deleted.",
+          error:
+            next.kind === "expense"
+              ? "Could not delete expense."
+              : "Could not delete settlement.",
+        }
+      );
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete this item."
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const deleteSummary = pendingDelete
+    ? pendingDelete.kind === "expense"
+      ? {
+          title: "Delete expense?",
+          primary: pendingDelete.item.description,
+          secondary: `${formatMoney(
+            pendingDelete.item.amount,
+            pendingDelete.item.currency
+          )} · Paid by ${memberName(pendingDelete.item.paidById)}`,
+          body: "This removes the expense from the ledger and recalculates every member balance. This cannot be undone.",
+          action: "Delete expense",
+        }
+      : {
+          title: "Delete settlement?",
+          primary: `${memberName(pendingDelete.item.fromMemberId)} paid ${memberName(
+            pendingDelete.item.toMemberId
+          )}`,
+          secondary: `${formatMoney(
+            pendingDelete.item.amount,
+            pendingDelete.item.currency
+          )} · ${formatDate(pendingDelete.item.timestamp)}`,
+          body: "This removes the settlement and restores the outstanding balance it had cleared. This cannot be undone.",
+          action: "Delete settlement",
+        }
+    : null;
+
   if (!loading && !group) {
     return (
       <div>
         <AppHeader title="Group" showBack onBack={() => router.push("/dashboard")} />
-        <main className="container py-10">
+        <main id="main-content" className="container py-10">
           <EmptyState
             icon={Receipt}
             title={error ? "Cannot load group" : "Group not found"}
@@ -115,7 +237,7 @@ export default function GroupDetailPage({
         }
       />
 
-      <main className="container space-y-4 py-5">
+      <main id="main-content" className="container space-y-4 py-5">
         <Card className="brand-gradient p-5 text-white">
           <p className="text-xs font-bold uppercase opacity-80">
             Total group spend
@@ -128,10 +250,9 @@ export default function GroupDetailPage({
         </Card>
 
         <Tabs defaultValue="ledger">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="ledger">Ledger</TabsTrigger>
-            <TabsTrigger value="balances">Balances</TabsTrigger>
-            <TabsTrigger value="debts">Solver</TabsTrigger>
+            <TabsTrigger value="settle">Settle up</TabsTrigger>
             <TabsTrigger value="settlements">Settled</TabsTrigger>
           </TabsList>
 
@@ -159,121 +280,146 @@ export default function GroupDetailPage({
                   <span className="font-black">
                     {formatMoney(e.amount, e.currency)}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete expense"
-                    onClick={() => runSyncing(() => repo!.deleteExpense(e))}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+                  <RowActions
+                    label={e.description}
+                    deleteLabel="Delete expense"
+                    onDelete={() => setPendingDelete({ kind: "expense", item: e })}
+                  />
                 </Card>
               ))
             )}
           </TabsContent>
 
-          {/* BALANCES */}
-          <TabsContent value="balances" className="space-y-2">
-            {balances.map((b) => {
-              const net = netBalance(b);
-              const isOwed = net > 0.01;
-              const settled = Math.abs(net) <= 0.01;
-              const totalVol = b.initialPaid + b.initialOwe;
-              const ratio = totalVol > 0.1 ? (b.initialPaid / totalVol) * 100 : 0;
-              const symbol = currencySymbol(b.currency);
-              return (
-                <Card
-                  key={`${b.member.id}-${b.currency}`}
-                  className="flex items-center justify-between gap-3 p-4"
-                >
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="font-bold">
-                      {labelForMember(b.member)}{" "}
-                      <span className="text-xs font-medium text-muted-foreground">
-                        ({b.currency})
-                      </span>
-                    </p>
-                    <div className="flex gap-3 text-xs">
-                      <span className="font-bold text-success">
-                        Spent {symbol}
-                        {b.initialPaid.toFixed(2)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        Share {symbol}
-                        {b.initialOwe.toFixed(2)}
-                      </span>
-                    </div>
-                    <Progress
-                      value={Math.min(100, Math.max(0, ratio))}
-                      className="h-1.5 w-32"
-                      indicatorClassName={isOwed ? "bg-success" : "bg-primary"}
-                    />
-                  </div>
-                  <Badge
-                    variant={
-                      settled ? "muted" : isOwed ? "success" : "destructive"
-                    }
-                  >
-                    {settled
-                      ? "Settled"
-                      : isOwed
-                        ? `+${symbol}${net.toFixed(2)}`
-                        : `-${symbol}${Math.abs(net).toFixed(2)}`}
-                  </Badge>
-                </Card>
-              );
-            })}
-          </TabsContent>
+          {/* SETTLE UP */}
+          <TabsContent value="settle" className="space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-base font-black">Who owes whom</h2>
+              <p className="text-sm text-muted-foreground">
+                Review each member balance, then record the recommended payments
+                that clear the group.
+              </p>
+            </div>
 
-          {/* DEBT SOLVER */}
-          <TabsContent value="debts" className="space-y-3">
-            {simplifiedDebts.length === 0 ? (
-              <EmptyState
-                icon={CheckCircle2}
-                title="All settled up!"
-                description="Everyone is square. No pending transactions required."
-              />
-            ) : (
-              <>
-                <div className="flex items-start gap-2 rounded-xl bg-primary/10 p-3 text-sm text-primary">
-                  <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p className="font-semibold">
-                    Debt simplification active. Tap &quot;Settle up&quot; to
-                    register a cash payment for any optimized transfer.
-                  </p>
-                </div>
-                {simplifiedDebts.map((d, i) => (
-                  <Card key={i} className="space-y-3 p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 rounded-lg bg-destructive/10 px-3 py-2 text-center">
-                        <p className="text-[10px] font-bold text-destructive">
-                          SENDER
+            <div className="space-y-2">
+              <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                Member balances
+              </p>
+              {balances.length === 0 ? (
+                <EmptyState
+                  icon={Receipt}
+                  title="No balances yet"
+                  description="Add an expense to see who paid and who owes."
+                />
+              ) : (
+                balances.map((b) => {
+                  const net = netBalance(b);
+                  const isOwed = net > 0.01;
+                  const settled = Math.abs(net) <= 0.01;
+                  const totalVol = b.initialPaid + b.initialOwe;
+                  const ratio =
+                    totalVol > 0.1 ? (b.initialPaid / totalVol) * 100 : 0;
+                  const symbol = currencySymbol(b.currency);
+                  return (
+                    <Card
+                      key={`${b.member.id}-${b.currency}`}
+                      className="flex items-center justify-between gap-3 p-4"
+                    >
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="font-bold">
+                          {labelForMember(b.member)}{" "}
+                          <span className="text-xs font-medium text-muted-foreground">
+                            ({b.currency})
+                          </span>
                         </p>
-                        <p className="font-bold">{labelForMember(d.debtor)}</p>
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <span className="font-bold text-success">
+                            Paid {symbol}
+                            {b.initialPaid.toFixed(2)}
+                          </span>
+                          <span className="text-muted-foreground">
+                            Share {symbol}
+                            {b.initialOwe.toFixed(2)}
+                          </span>
+                        </div>
+                        <Progress
+                          value={Math.min(100, Math.max(0, ratio))}
+                          className="h-1.5 w-32"
+                          indicatorClassName={
+                            isOwed ? "bg-success" : "bg-primary"
+                          }
+                        />
                       </div>
-                      <div className="flex flex-col items-center">
-                        <span className="font-black text-primary">
-                          {formatMoney(d.amount, d.currency)}
-                        </span>
-                        <ArrowRight className="h-4 w-4 text-primary" />
+                      <Badge
+                        variant={
+                          settled ? "muted" : isOwed ? "success" : "destructive"
+                        }
+                      >
+                        {settled
+                          ? "Settled"
+                          : isOwed
+                            ? `gets ${symbol}${net.toFixed(2)}`
+                            : `owes ${symbol}${Math.abs(net).toFixed(2)}`}
+                      </Badge>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                Recommended payments
+              </p>
+              {simplifiedDebts.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="All settled up"
+                  description="Everyone is square. No payment is needed."
+                />
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 rounded-xl bg-primary/10 p-3 text-sm text-primary">
+                    <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p className="font-semibold">
+                      These payments minimize the number of transfers needed to
+                      clear the group.
+                    </p>
+                  </div>
+                  {simplifiedDebts.map((d, i) => (
+                    <Card key={i} className="space-y-3 p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 rounded-lg bg-destructive/10 px-3 py-2 text-center">
+                          <p className="text-[10px] font-bold text-destructive">
+                            PAYS
+                          </p>
+                          <p className="font-bold">{labelForMember(d.debtor)}</p>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="font-black text-primary">
+                            {formatMoney(d.amount, d.currency)}
+                          </span>
+                          <ArrowRight className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1 rounded-lg bg-success/15 px-3 py-2 text-center">
+                          <p className="text-[10px] font-bold text-success">
+                            RECEIVES
+                          </p>
+                          <p className="font-bold">
+                            {labelForMember(d.creditor)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 rounded-lg bg-success/15 px-3 py-2 text-center">
-                        <p className="text-[10px] font-bold text-[hsl(142_71%_30%)]">
-                          RECIPIENT
-                        </p>
-                        <p className="font-bold">{labelForMember(d.creditor)}</p>
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={() => setSettleDebt(d)}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Record payment
+                        </Button>
                       </div>
-                    </div>
-                    <div className="flex justify-end">
-                      <Button size="sm" onClick={() => setSettleDebt(d)}>
-                        <CheckCircle2 className="h-4 w-4" />
-                        Settle up
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </>
-            )}
+                    </Card>
+                  ))}
+                </>
+              )}
+            </div>
           </TabsContent>
 
           {/* SETTLEMENTS */}
@@ -282,7 +428,7 @@ export default function GroupDetailPage({
               <EmptyState
                 icon={Receipt}
                 title="No settlements yet"
-                description="Record transfers from the Solver tab to clear balances."
+                description="Record payments from the Settle up tab to clear balances."
               />
             ) : (
               payments.map((p) => (
@@ -302,14 +448,13 @@ export default function GroupDetailPage({
                   <span className="font-black text-success">
                     {formatMoney(p.amount, p.currency)}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete settlement"
-                    onClick={() => runSyncing(() => repo!.deletePayment(p))}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+                  <RowActions
+                    label={`${memberName(p.fromMemberId)} paid ${memberName(
+                      p.toMemberId
+                    )}`}
+                    deleteLabel="Delete settlement"
+                    onDelete={() => setPendingDelete({ kind: "payment", item: p })}
+                  />
                 </Card>
               ))
             )}
@@ -340,6 +485,61 @@ export default function GroupDetailPage({
         debt={settleDebt}
         onClose={() => setSettleDebt(null)}
       />
+      <Dialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setPendingDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{deleteSummary?.title}</DialogTitle>
+          </DialogHeader>
+          {deleteSummary && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/50 px-3 py-2">
+                <p className="font-bold">{deleteSummary.primary}</p>
+                <p className="text-sm text-muted-foreground">
+                  {deleteSummary.secondary}
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {deleteSummary.body}
+              </p>
+              {deleteError && (
+                <p
+                  className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                  role="alert"
+                >
+                  {deleteError}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPendingDelete(null);
+                setDeleteError(null);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : deleteSummary?.action ?? "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

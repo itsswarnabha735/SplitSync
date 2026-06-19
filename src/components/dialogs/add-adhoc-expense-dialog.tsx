@@ -63,6 +63,7 @@ export function AddAdHocExpenseDialog({
     emptySplitState(participants)
   );
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const amount = parseFloat(amountStr) || 0;
 
@@ -86,6 +87,7 @@ export function AddAdHocExpenseDialog({
     setSplitType("EQUAL");
     setSplit(emptySplitState(participants));
     setError(null);
+    setSaving(false);
   }
 
   async function handleSave() {
@@ -123,25 +125,39 @@ export function AddAdHocExpenseDialog({
     }
     if (!repo) return;
 
-    await runSyncing(() =>
-      repo.createAdHocExpenseWithSplits({
-        description,
-        amount,
-        paidByFriendId: paidBy,
-        splitType,
-        splits: result.splits,
-        currency,
-      })
-    );
-    reset();
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      await runSyncing(
+        () =>
+          repo.createAdHocExpenseWithSplits({
+            description,
+            amount,
+            paidByFriendId: paidBy,
+            splitType,
+            splits: result.splits,
+            currency,
+          }),
+        {
+          loading: "Saving expense...",
+          success: "Expense saved.",
+          error: "Could not save expense.",
+        }
+      );
+      reset();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save expense.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) reset();
+        if (!o && saving) return;
+        if (!o && !saving) reset();
         onOpenChange(o);
       }}
     >
@@ -152,7 +168,10 @@ export function AddAdHocExpenseDialog({
 
         <div className="space-y-4">
           {error && (
-            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+            <p
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              role="alert"
+            >
               {error}
             </p>
           )}
@@ -249,10 +268,16 @@ export function AddAdHocExpenseDialog({
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
             Cancel
           </Button>
-          <Button onClick={handleSave}>Save expense</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving expense..." : "Save expense"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -266,21 +291,53 @@ export function SplitTypeToggle({
   value: SplitType;
   onChange: (t: SplitType) => void;
 }) {
+  const options = [
+    { value: "EQUAL", label: "Split equally" },
+    { value: "EXACT", label: "Split exactly" },
+  ] as const;
+
+  function selectNext(current: SplitType, direction: 1 | -1) {
+    const index = options.findIndex((option) => option.value === current);
+    const next = options[(index + direction + options.length) % options.length];
+    onChange(next.value);
+  }
+
   return (
-    <div className="flex gap-1 rounded-lg bg-muted p-1">
-      {(["EQUAL", "EXACT"] as const).map((t) => (
+    <div
+      className="flex gap-1 rounded-lg bg-muted p-1"
+      role="radiogroup"
+      aria-label="Split type"
+    >
+      {options.map((option) => (
         <button
-          key={t}
+          key={option.value}
           type="button"
-          onClick={() => onChange(t)}
+          role="radio"
+          aria-checked={value === option.value}
+          tabIndex={value === option.value ? 0 : -1}
+          onClick={() => onChange(option.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+              event.preventDefault();
+              selectNext(value, 1);
+            }
+            if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+              event.preventDefault();
+              selectNext(value, -1);
+            }
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              onChange(option.value);
+            }
+          }}
           className={cn(
             "flex-1 rounded-md py-2 text-sm font-bold transition-colors",
-            value === t
+            value === option.value
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground"
           )}
         >
-          {t === "EQUAL" ? "Split equally" : "Split exactly"}
+          {option.label}
         </button>
       ))}
     </div>

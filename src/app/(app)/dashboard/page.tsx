@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { LogOut, Mail, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
@@ -23,6 +23,10 @@ export default function DashboardPage() {
   const { user, displayName } = useAuth();
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
+  const [pendingInviteAction, setPendingInviteAction] = useState<string | null>(
+    null
+  );
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const { groups } = useGroups();
   const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
@@ -34,6 +38,37 @@ export default function DashboardPage() {
     friendsWithBalances,
     friends
   );
+
+  async function handleInviteAction(
+    inv: (typeof invites)[number],
+    action: "accept" | "decline"
+  ) {
+    if (!repo) return;
+    const actionId = `${action}:${inv.id}`;
+    setPendingInviteAction(actionId);
+    setInviteError(null);
+    try {
+      await runSyncing(
+        () =>
+          action === "accept"
+            ? repo.acceptInvite(inv, displayName, user?.email ?? "")
+            : repo.declineInvite(inv),
+        {
+          loading:
+            action === "accept" ? "Accepting invite..." : "Declining invite...",
+          success:
+            action === "accept" ? "Invite accepted." : "Invite declined.",
+          error: "Could not update invite.",
+        }
+      );
+    } catch (err) {
+      setInviteError(
+        err instanceof Error ? err.message : "Could not update invite."
+      );
+    } finally {
+      setPendingInviteAction(null);
+    }
+  }
 
   return (
     <div className="pb-16">
@@ -52,7 +87,7 @@ export default function DashboardPage() {
         }
       />
 
-      <main className="container space-y-5 py-5">
+      <main id="main-content" className="container space-y-5 py-5">
         {/* Summary */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card className="brand-gradient p-4 text-white">
@@ -109,25 +144,32 @@ export default function DashboardPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    repo && runSyncing(() => repo.declineInvite(inv))
-                  }
+                  onClick={() => handleInviteAction(inv, "decline")}
+                  disabled={pendingInviteAction !== null}
                 >
-                  Decline
+                  {pendingInviteAction === `decline:${inv.id}`
+                    ? "Declining..."
+                    : "Decline"}
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() =>
-                    repo &&
-                    runSyncing(() =>
-                      repo.acceptInvite(inv, displayName, user?.email ?? "")
-                    )
-                  }
+                  onClick={() => handleInviteAction(inv, "accept")}
+                  disabled={pendingInviteAction !== null}
                 >
-                  Accept
+                  {pendingInviteAction === `accept:${inv.id}`
+                    ? "Accepting..."
+                    : "Accept"}
                 </Button>
               </Card>
             ))}
+            {inviteError && (
+              <p
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                role="alert"
+              >
+                {inviteError}
+              </p>
+            )}
           </div>
         )}
 

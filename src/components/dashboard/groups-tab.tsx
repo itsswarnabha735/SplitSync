@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Users, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Users, ChevronRight, MoreVertical } from "lucide-react";
 
 import type { Group } from "@/lib/models";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,18 +18,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function GroupsTab({ groups }: { groups: Group[] }) {
   const { user } = useAuth();
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
   const [pendingDelete, setPendingDelete] = useState<Group | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function confirmDelete() {
     if (!repo || !pendingDelete) return;
     const g = pendingDelete;
-    setPendingDelete(null);
-    await runSyncing(() => repo.deleteGroup(g));
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await runSyncing(() => repo.deleteGroup(g), {
+        loading: "Deleting group...",
+        success: "Group deleted.",
+        error: "Could not delete group.",
+      });
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete this group."
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -83,14 +105,10 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </Link>
                 {g.createdBy === user?.uid && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete group"
-                    onClick={() => setPendingDelete(g)}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+                  <GroupRowActions
+                    groupName={g.name}
+                    onDelete={() => setPendingDelete(g)}
+                  />
                 )}
               </div>
             </Card>
@@ -100,7 +118,12 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
 
       <Dialog
         open={!!pendingDelete}
-        onOpenChange={(o) => !o && setPendingDelete(null)}
+        onOpenChange={(o) => {
+          if (!o && !deleting) {
+            setPendingDelete(null);
+            setDeleteError(null);
+          }
+        }}
       >
         <DialogContent>
           <DialogHeader>
@@ -110,16 +133,70 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
             This permanently removes the group and all of its expenses,
             members, and settlements. This cannot be undone.
           </p>
+          {deleteError && (
+            <p
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+              role="alert"
+            >
+              {deleteError}
+            </p>
+          )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setPendingDelete(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPendingDelete(null);
+                setDeleteError(null);
+              }}
+              disabled={deleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete group
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete group"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function GroupRowActions({
+  groupName,
+  onDelete,
+}: {
+  groupName: string;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 shrink-0"
+          aria-label={`Actions for ${groupName}`}
+        >
+          <MoreVertical className="h-5 w-5 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={(event) => {
+            event.preventDefault();
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete group
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

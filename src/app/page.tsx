@@ -16,8 +16,12 @@ export default function RootRedirect() {
   }, [user, loading, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <main
+      id="main-content"
+      className="flex min-h-screen items-center justify-center"
+      aria-label="Loading SplitSync"
+    >
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
+    </main>
   );
 }

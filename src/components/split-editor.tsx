@@ -103,6 +103,10 @@ export function SplitEditor({
   const diffCents = Math.round(amount * 100) - Math.round(total * 100);
   const diff = diffCents / 100;
   const matches = diffCents === 0;
+  const diffLabel =
+    diffCents > 0
+      ? `Still need ${symbol}${Math.abs(diff).toFixed(2)}`
+      : `Over by ${symbol}${Math.abs(diff).toFixed(2)}`;
 
   return (
     <div className="space-y-2">
@@ -120,11 +124,9 @@ export function SplitEditor({
           ) : (
             <Info className="h-4 w-4" />
           )}
-          {matches ? "Split matches total" : "Portions differ"}
+          {matches ? "Split matches total" : "Adjust split amounts"}
         </span>
-        <span>
-          {matches ? "100%" : `Diff: ${symbol}${diff.toFixed(2)}`}
-        </span>
+        <span>{matches ? "Ready to save" : diffLabel}</span>
       </div>
 
       {participants.map((p) => (

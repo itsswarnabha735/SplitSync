@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wallet, Loader2, AlertCircle } from "lucide-react";
+import { Wallet, Loader2, AlertCircle, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import {
   friendlyAuthError,
+  sendPasswordReset,
   signInWithEmail,
   signInWithGoogle,
   signUpWithEmail,
@@ -26,7 +27,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [working, setWorking] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) router.replace("/dashboard");
@@ -44,6 +47,7 @@ export default function LoginPage() {
     }
     setWorking(true);
     setError(null);
+    setMessage(null);
     try {
       if (mode === "signin") {
         await signInWithEmail(email, password);
@@ -60,6 +64,7 @@ export default function LoginPage() {
   async function handleGoogle() {
     setWorking(true);
     setError(null);
+    setMessage(null);
     try {
       await signInWithGoogle();
     } catch (err) {
@@ -69,8 +74,30 @@ export default function LoginPage() {
     }
   }
 
+  async function handlePasswordReset() {
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      setMessage(null);
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await sendPasswordReset(email);
+      setMessage("Password reset email sent.");
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <main
+      id="main-content"
+      className="flex min-h-screen items-center justify-center px-4 py-10"
+    >
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <div className="brand-gradient flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/30">
@@ -82,12 +109,36 @@ export default function LoginPage() {
               ? "Sign in to sync your groups"
               : "Create your SplitSync account"}
           </p>
+          <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+            Continue with Google for provider-managed sign-in, or use an email
+            password saved through Firebase Authentication.
+          </p>
+        </div>
+
+        <div className="mb-4 flex items-start gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p>
+            Split data is tied to your signed-in account. SplitSync stores only
+            the profile details needed for group invites and friend lookup.
+          </p>
         </div>
 
         {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">
+          <div
+            className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+            role="alert"
+          >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+        {message && (
+          <div
+            className="mb-4 rounded-lg bg-primary/10 px-4 py-3 text-sm font-semibold text-primary"
+            role="status"
+            aria-live="polite"
+          >
+            {message}
           </div>
         )}
 
@@ -144,10 +195,15 @@ export default function LoginPage() {
             type="submit"
             className="w-full"
             size="lg"
-            disabled={working}
+            disabled={working || resetting}
           >
+            {working && <Loader2 className="h-4 w-4 animate-spin" />}
             {working ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              mode === "signin" ? (
+                "Signing in..."
+              ) : (
+                "Creating account..."
+              )
             ) : mode === "signin" ? (
               "Sign In"
             ) : (
@@ -155,6 +211,17 @@ export default function LoginPage() {
             )}
           </Button>
         </form>
+
+        {mode === "signin" && (
+          <button
+            type="button"
+            className="mt-3 w-full text-center text-sm font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={handlePasswordReset}
+            disabled={working || resetting}
+          >
+            {resetting ? "Sending reset email..." : "Forgot password?"}
+          </button>
+        )}
 
         <div className="my-5 flex items-center gap-3">
           <div className="h-px flex-1 bg-border" />
@@ -168,9 +235,9 @@ export default function LoginPage() {
           size="lg"
           className="w-full"
           onClick={handleGoogle}
-          disabled={working}
+          disabled={working || resetting}
         >
-          Continue with Google
+          {working ? "Connecting..." : "Continue with Google"}
         </Button>
 
         <button
@@ -179,13 +246,15 @@ export default function LoginPage() {
           onClick={() => {
             setMode(mode === "signin" ? "signup" : "signin");
             setError(null);
+            setMessage(null);
           }}
+          disabled={working || resetting}
         >
           {mode === "signin"
             ? "Don't have an account? Create one"
             : "Already have an account? Sign in"}
         </button>
       </div>
-    </div>
+    </main>
   );
 }

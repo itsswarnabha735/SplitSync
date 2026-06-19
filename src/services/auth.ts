@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
@@ -10,7 +11,7 @@ import {
 } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirestoreDb } from "@/lib/firebase";
 
 /**
  * Auth service ported from the Android `AuthRepository`. Every successful sign
@@ -24,6 +25,7 @@ export async function signInWithEmail(
   email: string,
   password: string
 ): Promise<UserCredential> {
+  const auth = getFirebaseAuth();
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
   await upsertUserDoc(result.user);
   return result;
@@ -34,6 +36,7 @@ export async function signUpWithEmail(
   email: string,
   password: string
 ): Promise<UserCredential> {
+  const auth = getFirebaseAuth();
   const result = await createUserWithEmailAndPassword(
     auth,
     email.trim(),
@@ -45,13 +48,19 @@ export async function signUpWithEmail(
 }
 
 export async function signInWithGoogle(): Promise<UserCredential> {
+  const auth = getFirebaseAuth();
   const result = await signInWithPopup(auth, googleProvider);
   await upsertUserDoc(result.user);
   return result;
 }
 
 export function signOut(): Promise<void> {
-  return fbSignOut(auth);
+  return fbSignOut(getFirebaseAuth());
+}
+
+export async function sendPasswordReset(email: string): Promise<void> {
+  const auth = getFirebaseAuth();
+  await sendPasswordResetEmail(auth, email.trim());
 }
 
 /**
@@ -62,6 +71,7 @@ export async function upsertUserDoc(
   user: User,
   overrideDisplayName?: string
 ): Promise<void> {
+  const db = getFirestoreDb();
   const fallbackName =
     user.displayName ?? user.email?.split("@")[0] ?? "Anonymous";
   await setDoc(

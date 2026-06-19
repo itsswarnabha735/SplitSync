@@ -40,6 +40,7 @@ export function AddFriendDialog({
   const [results, setResults] = useState<UserResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [addingUid, setAddingUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
@@ -47,6 +48,7 @@ export function AddFriendDialog({
     setResults([]);
     setSearched(false);
     setSearching(false);
+    setAddingUid(null);
     setError(null);
   }
 
@@ -74,24 +76,39 @@ export function AddFriendDialog({
 
   async function handleAdd(target: UserResult) {
     if (!repo) return;
-    await runSyncing(() =>
-      repo.addRegisteredFriend(
+    setAddingUid(target.uid);
+    setError(null);
+    try {
+      await runSyncing(
+        () =>
+          repo.addRegisteredFriend(
+            {
+              uid: target.uid,
+              name: target.displayName,
+              email: target.email,
+            },
+            { name: displayName, email: user?.email ?? "" }
+          ),
         {
-          uid: target.uid,
-          name: target.displayName,
-          email: target.email,
-        },
-        { name: displayName, email: user?.email ?? "" }
-      )
-    );
-    reset();
-    onOpenChange(false);
+          loading: "Adding friend...",
+          success: "Friend added.",
+          error: "Could not add friend.",
+        }
+      );
+      reset();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add friend.");
+    } finally {
+      setAddingUid(null);
+    }
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        if (!o && addingUid) return;
         if (!o) reset();
         onOpenChange(o);
       }}
@@ -105,7 +122,9 @@ export function AddFriendDialog({
         </DialogHeader>
         <div className="space-y-3">
           {error && (
-            <p className="text-sm font-semibold text-destructive">{error}</p>
+            <p className="text-sm font-semibold text-destructive" role="alert">
+              {error}
+            </p>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="friend-email">Email address</Label>
@@ -131,7 +150,7 @@ export function AddFriendDialog({
               <Button
                 variant="outline"
                 onClick={handleSearch}
-                disabled={searching || !email.trim()}
+                disabled={searching || addingUid !== null || !email.trim()}
               >
                 <Search className="h-4 w-4" />
                 {searching ? "..." : "Search"}
@@ -149,7 +168,8 @@ export function AddFriendDialog({
                   key={user.uid}
                   type="button"
                   onClick={() => handleAdd(user)}
-                  className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+                  disabled={addingUid !== null}
+                  className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
                     {user.displayName.charAt(0).toUpperCase()}
@@ -160,6 +180,9 @@ export function AddFriendDialog({
                       {user.email}
                     </p>
                   </div>
+                  <span className="text-sm font-semibold text-primary">
+                    {addingUid === user.uid ? "Adding..." : "Add"}
+                  </span>
                   <UserCheck className="h-5 w-5 text-primary" />
                 </button>
               ))}
@@ -167,7 +190,11 @@ export function AddFriendDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={addingUid !== null}
+          >
             Cancel
           </Button>
         </DialogFooter>

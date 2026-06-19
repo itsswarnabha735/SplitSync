@@ -14,7 +14,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
-import { db } from "@/lib/firebase";
+import { getFirestoreDb } from "@/lib/firebase";
 import { calculateFriendBalances } from "@/lib/balances";
 import {
   AdHocExpense,
@@ -67,6 +67,7 @@ function snapshotError(label: string, onError?: ErrorCb) {
  * unmount (the web equivalent of the Kotlin `callbackFlow` + `awaitClose`).
  */
 export function makeRepository(uid: string) {
+  const db = getFirestoreDb();
   // --- Path helpers ---
   const groupsRef = () => collection(db, "groups");
   const groupDoc = (groupId: string) => doc(db, "groups", groupId);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, UserRound } from "lucide-react";
+import { Plus, Trash2, UserRound, UserPlus } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useFriends } from "@/hooks/use-friends";
@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { AddFriendDialog } from "@/components/dialogs/add-friend-dialog";
 
 export default function CreateGroupPage() {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function CreateGroupPage() {
   // Selectable friend slots (by friend id). The creator is implicit.
   const [memberIds, setMemberIds] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [showAddFriend, setShowAddFriend] = useState(false);
 
   function setMemberAt(index: number, value: string) {
     setMemberIds((prev) => prev.map((m, i) => (i === index ? value : m)));
@@ -51,22 +54,38 @@ export default function CreateGroupPage() {
         { name: friend.name, email: friend.email, linkedUid: friend.linkedUid },
       ];
     });
-    const groupId = await runSyncing(() =>
-      repo.createGroupWithMembers(name, description, newMembers, {
-        name: displayName,
-        email: user?.email ?? "",
-      })
-    );
-    router.replace(`/groups/${groupId}`);
+    setCreating(true);
+    try {
+      const groupId = await runSyncing(
+        () =>
+          repo.createGroupWithMembers(name, description, newMembers, {
+            name: displayName,
+            email: user?.email ?? "",
+          }),
+        {
+          loading: "Creating group...",
+          success: "Group created.",
+          error: "Could not create group.",
+        }
+      );
+      router.replace(`/groups/${groupId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create group.");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
     <div className="pb-24">
       <AppHeader title="Create group" showBack />
 
-      <main className="container space-y-5 py-5">
+      <main id="main-content" className="container space-y-5 py-5">
         {error && (
-          <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">
+          <p
+            className="rounded-lg bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+            role="alert"
+          >
             {error}
           </p>
         )}
@@ -110,6 +129,10 @@ export default function CreateGroupPage() {
               size="sm"
               variant="ghost"
               onClick={() => setMemberIds((prev) => [...prev, ""])}
+              disabled={
+                friends.length === 0 ||
+                memberIds.filter(Boolean).length >= friends.length
+              }
             >
               <Plus className="h-4 w-4" />
               Add member
@@ -156,21 +179,38 @@ export default function CreateGroupPage() {
           </div>
 
           {friends.length === 0 && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Tip: add friends from the dashboard first to pick them here. Only
-              registered users you&apos;ve added as friends can join a group.
-            </p>
+            <div className="mt-3 rounded-xl border bg-muted/50 p-4">
+              <p className="font-bold">Add a friend to continue</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Groups need at least one friend. Search by email here, then pick
+                them as a member without leaving this page.
+              </p>
+              <Button
+                className="mt-3"
+                size="sm"
+                onClick={() => setShowAddFriend(true)}
+              >
+                <UserPlus className="h-4 w-4" />
+                Add friend
+              </Button>
+            </div>
           )}
         </div>
       </main>
 
       <div className="fixed inset-x-0 bottom-0 border-t bg-background/90 p-4 backdrop-blur">
         <div className="container">
-          <Button className="w-full" size="lg" onClick={handleCreate}>
-            Create group
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={handleCreate}
+            disabled={creating}
+          >
+            {creating ? "Creating group..." : "Create group"}
           </Button>
         </div>
       </div>
+      <AddFriendDialog open={showAddFriend} onOpenChange={setShowAddFriend} />
     </div>
   );
 }

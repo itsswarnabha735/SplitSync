@@ -10,7 +10,8 @@ import {
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 
-import { auth } from "@/lib/firebase";
+import { FirebaseSetupError } from "@/components/firebase-setup-error";
+import { firebaseConfigError, getFirebaseAuth } from "@/lib/firebase";
 
 interface AuthContextValue {
   user: User | null;
@@ -30,6 +31,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (firebaseConfigError) {
+      setLoading(false);
+      return;
+    }
+    const auth = getFirebaseAuth();
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -42,6 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user?.displayName ?? user?.email?.split("@")[0] ?? "Me";
     return { user, loading, displayName };
   }, [user, loading]);
+
+  if (firebaseConfigError) {
+    return <FirebaseSetupError error={firebaseConfigError} />;
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

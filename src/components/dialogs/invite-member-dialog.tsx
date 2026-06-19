@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Group } from "@/lib/models";
 import { useAuth } from "@/hooks/use-auth";
 import { useRepository } from "@/hooks/use-repository";
+import { useUiStore } from "@/stores/ui-store";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,8 @@ export function InviteMemberDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const repo = useRepository();
+  const runSyncing = useUiStore((s) => s.runSyncing);
+  const setStatusMessage = useUiStore((s) => s.setStatusMessage);
   const { displayName } = useAuth();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -40,12 +43,21 @@ export function InviteMemberDialog({
     setWorking(true);
     setMessage(null);
     try {
-      const ok = await repo.inviteToGroupByEmail(group, email, displayName);
+      const ok = await runSyncing(
+        () => repo.inviteToGroupByEmail(group, email, displayName),
+        {
+          loading: "Sending invite...",
+          success: "Invite request finished.",
+          error: "Could not send invite.",
+        }
+      );
       if (ok) {
+        setStatusMessage("Invite sent.");
         setEmail("");
         onOpenChange(false);
       } else {
         setMessage("No SplitSync user found with that email.");
+        setStatusMessage("No user found for that email.");
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not send invite.");
@@ -55,7 +67,13 @@ export function InviteMemberDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && working) return;
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite member</DialogTitle>
@@ -80,15 +98,21 @@ export function InviteMemberDialog({
             />
           </div>
           {message && (
-            <p className="text-sm font-semibold text-destructive">{message}</p>
+            <p className="text-sm font-semibold text-destructive" role="alert">
+              {message}
+            </p>
           )}
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={working}
+          >
             Cancel
           </Button>
           <Button onClick={handleInvite} disabled={working || !email.trim()}>
-            Send invite
+            {working ? "Sending..." : "Send invite"}
           </Button>
         </div>
       </DialogContent>

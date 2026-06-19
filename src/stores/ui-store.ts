@@ -8,23 +8,42 @@ import { create } from "zustand";
 interface UiState {
   validationError: string | null;
   isSyncing: boolean;
+  statusMessage: string | null;
   setValidationError: (msg: string | null) => void;
   clearValidationError: () => void;
   setSyncing: (syncing: boolean) => void;
+  setStatusMessage: (msg: string | null) => void;
   /** Wraps an async write so the global sync indicator reflects in-flight ops. */
-  runSyncing: <T>(fn: () => Promise<T>) => Promise<T>;
+  runSyncing: <T>(
+    fn: () => Promise<T>,
+    messages?: {
+      loading?: string;
+      success?: string;
+      error?: string;
+    }
+  ) => Promise<T>;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   validationError: null,
   isSyncing: false,
+  statusMessage: null,
   setValidationError: (msg) => set({ validationError: msg }),
   clearValidationError: () => set({ validationError: null }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
-  runSyncing: async (fn) => {
-    set({ isSyncing: true });
+  setStatusMessage: (msg) => set({ statusMessage: msg }),
+  runSyncing: async (fn, messages) => {
+    set({
+      isSyncing: true,
+      statusMessage: messages?.loading ?? "Saving changes...",
+    });
     try {
-      return await fn();
+      const result = await fn();
+      set({ statusMessage: messages?.success ?? "Changes saved." });
+      return result;
+    } catch (err) {
+      set({ statusMessage: messages?.error ?? "Could not save changes." });
+      throw err;
     } finally {
       set({ isSyncing: false });
     }

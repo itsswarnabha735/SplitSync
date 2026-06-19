@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, UserPlus, Receipt, HandCoins } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  UserPlus,
+  Receipt,
+  HandCoins,
+  Loader2,
+  MoreVertical,
+} from "lucide-react";
 
 import type { Friend, FriendWithBalance } from "@/lib/models";
 import { formatMoney } from "@/lib/currency";
@@ -14,6 +22,12 @@ import { EmptyState } from "@/components/empty-state";
 import { AddFriendDialog } from "@/components/dialogs/add-friend-dialog";
 import { AddAdHocExpenseDialog } from "@/components/dialogs/add-adhoc-expense-dialog";
 import { SettleAdHocDialog } from "@/components/dialogs/settle-adhoc-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function FriendsTab({
   friends,
@@ -31,6 +45,7 @@ export function FriendsTab({
     null
   );
   const [error, setError] = useState<string | null>(null);
+  const [deletingFriendId, setDeletingFriendId] = useState<string | null>(null);
 
   // Group balances by friend so each friend shows one row (with per-currency).
   const byFriend = useMemo(() => {
@@ -46,12 +61,19 @@ export function FriendsTab({
   async function handleDeleteFriend(friend: Friend) {
     if (!repo) return;
     setError(null);
+    setDeletingFriendId(friend.id);
     try {
-      await runSyncing(() => repo.deleteFriend(friend));
+      await runSyncing(() => repo.deleteFriend(friend), {
+        loading: "Deleting friend...",
+        success: "Friend deleted.",
+        error: "Could not delete friend.",
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not delete this friend."
       );
+    } finally {
+      setDeletingFriendId(null);
     }
   }
 
@@ -82,7 +104,10 @@ export function FriendsTab({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+        <p
+          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+          role="alert"
+        >
           {error}
         </p>
       )}
@@ -141,15 +166,12 @@ export function FriendsTab({
                       Settle
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete friend"
-                    onClick={() => handleDeleteFriend(friend)}
-                    disabled={!repo}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+                  <FriendRowActions
+                    friendName={friend.name}
+                    deleting={deletingFriendId === friend.id}
+                    disabled={!repo || deletingFriendId === friend.id}
+                    onDelete={() => handleDeleteFriend(friend)}
+                  />
                 </div>
               </Card>
             );
@@ -168,5 +190,49 @@ export function FriendsTab({
         onClose={() => setSettleTarget(null)}
       />
     </div>
+  );
+}
+
+function FriendRowActions({
+  friendName,
+  deleting,
+  disabled,
+  onDelete,
+}: {
+  friendName: string;
+  deleting: boolean;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 shrink-0"
+          aria-label={`Actions for ${friendName}`}
+          disabled={disabled}
+        >
+          {deleting ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : (
+            <MoreVertical className="h-5 w-5 text-muted-foreground" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={(event) => {
+            event.preventDefault();
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete friend
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
