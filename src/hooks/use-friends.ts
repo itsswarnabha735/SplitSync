@@ -16,6 +16,11 @@ import {
   deriveAdHocSplits,
   mergeFriendBalances,
 } from "@/lib/balances";
+import {
+  buildFriendIdentityIndex,
+  canonicalizeAdHocExpenses,
+  canonicalizeAdHocPayments,
+} from "@/lib/friend-identities";
 import { useRepository } from "@/hooks/use-repository";
 
 interface GroupSlice {
@@ -34,7 +39,7 @@ interface GroupSlice {
 export function useFriends(groupIds: string[] = []) {
   const repo = useRepository();
   const uid = repo?.uid ?? null;
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [rawFriends, setRawFriends] = useState<Friend[]>([]);
   const [adHocExpenses, setAdHocExpenses] = useState<AdHocExpense[]>([]);
   const [adHocPayments, setAdHocPayments] = useState<AdHocPayment[]>([]);
   const [groupSlices, setGroupSlices] = useState<Record<string, GroupSlice>>(
@@ -45,7 +50,7 @@ export function useFriends(groupIds: string[] = []) {
   useEffect(() => {
     if (!repo) return;
     const unsubs = [
-      repo.subscribeFriends(setFriends),
+      repo.subscribeFriends(setRawFriends),
       repo.subscribeAdHocExpenses(setAdHocExpenses),
       repo.subscribeAdHocPayments(setAdHocPayments),
     ];
@@ -91,12 +96,36 @@ export function useFriends(groupIds: string[] = []) {
     return () => unsubs.forEach((u) => u());
   }, [repo, idsKey]);
 
+  const friendIdentityIndex = useMemo(
+    () => buildFriendIdentityIndex(rawFriends),
+    [rawFriends]
+  );
+  const friends = friendIdentityIndex.friends;
+
+  const canonicalAdHocExpenses = useMemo(
+    () =>
+      canonicalizeAdHocExpenses(
+        adHocExpenses,
+        friendIdentityIndex.aliasToCanonicalId
+      ),
+    [adHocExpenses, friendIdentityIndex]
+  );
+
+  const canonicalAdHocPayments = useMemo(
+    () =>
+      canonicalizeAdHocPayments(
+        adHocPayments,
+        friendIdentityIndex.aliasToCanonicalId
+      ),
+    [adHocPayments, friendIdentityIndex]
+  );
+
   // Compute merged friend balances (ad-hoc + group-derived).
   const friendsWithBalances = useMemo(() => {
     const adHocBalances = calculateFriendBalances(
       friends,
-      adHocExpenses,
-      adHocPayments
+      canonicalAdHocExpenses,
+      canonicalAdHocPayments
     );
 
     if (!uid || Object.keys(groupSlices).length === 0) {
@@ -110,17 +139,23 @@ export function useFriends(groupIds: string[] = []) {
     );
 
     return mergeFriendBalances(adHocBalances, groupBalances);
-  }, [friends, adHocExpenses, adHocPayments, uid, groupSlices]);
+  }, [
+    friends,
+    canonicalAdHocExpenses,
+    canonicalAdHocPayments,
+    uid,
+    groupSlices,
+  ]);
 
   const adHocSplits = useMemo(
-    () => deriveAdHocSplits(adHocExpenses),
-    [adHocExpenses]
+    () => deriveAdHocSplits(canonicalAdHocExpenses),
+    [canonicalAdHocExpenses]
   );
 
   return {
     friends,
-    adHocExpenses,
-    adHocPayments,
+    adHocExpenses: canonicalAdHocExpenses,
+    adHocPayments: canonicalAdHocPayments,
     friendsWithBalances,
     adHocSplits,
   };

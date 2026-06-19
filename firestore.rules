@@ -48,6 +48,14 @@ service cloud.firestore {
       return value in ["EQUAL", "EXACT"];
     }
 
+    function isExpenseCategory(value) {
+      return value in [
+        "food-dining", "groceries", "transport", "fuel", "shopping",
+        "entertainment", "utilities", "travel", "health", "housing",
+        "investments", "fees", "income", "transfers", "other"
+      ];
+    }
+
     function isSmallStringMap(value) {
       return value is map && value.keys().size() > 0 && value.keys().size() <= 100;
     }
@@ -177,7 +185,7 @@ service cloud.firestore {
     function isExpenseDoc(groupId, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "description", "amount", "paidById", "splitType",
-          "timestamp", "currency", "splits", "createdByUid"
+          "timestamp", "currency", "splits", "createdByUid", "category"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -195,6 +203,10 @@ service cloud.firestore {
         && (
           !("createdByUid" in request.resource.data)
           || isActorUid(request.resource.data.createdByUid)
+        )
+        && (
+          !("category" in request.resource.data)
+          || isExpenseCategory(request.resource.data.category)
         );
     }
 
@@ -248,7 +260,7 @@ service cloud.firestore {
     function isAdHocExpenseDoc(uid, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "description", "amount", "paidByFriendId", "splitType",
-          "timestamp", "currency", "splits", "createdByUid", "mirroredFromPath",
+          "timestamp", "currency", "splits", "createdByUid", "category", "mirroredFromPath",
           "mirroredFromUid", "originalId"
         ])
         && request.resource.data.keys().hasAll([
@@ -266,6 +278,10 @@ service cloud.firestore {
         && (
           !("createdByUid" in request.resource.data)
           || isActorUid(request.resource.data.createdByUid)
+        )
+        && (
+          !("category" in request.resource.data)
+          || isExpenseCategory(request.resource.data.category)
         )
         && !("mirroredFromPath" in request.resource.data);
     }

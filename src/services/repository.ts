@@ -18,6 +18,12 @@ import {
 
 import { getFirestoreDb } from "@/lib/firebase";
 import { calculateFriendBalances } from "@/lib/balances";
+import type { ExpenseCategorySlug } from "@/lib/expense-categories";
+import {
+  buildFriendIdentityIndex,
+  canonicalizeAdHocExpenses,
+  canonicalizeAdHocPayments,
+} from "@/lib/friend-identities";
 import {
   AdHocExpense,
   AdHocPayment,
@@ -65,6 +71,16 @@ function snapshotError(label: string, onError?: ErrorCb) {
   };
 }
 
+function numberMapsEqual(
+  a: Record<string, number>,
+  b: Record<string, number>
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => a[key] === b[key]);
+}
+
 /**
  * Firestore data access for SplitSync, ported from the Android
  * `SplitSyncRepository`. A repository instance is bound to the signed-in user's
@@ -98,6 +114,18 @@ export function makeRepository(uid: string) {
   const fcmTokensRef = () => collection(db, "users", uid, "fcmTokens");
   const fcmTokenDoc = (tokenHash: string) =>
     doc(db, "users", uid, "fcmTokens", tokenHash);
+
+  async function commitBatched(
+    actions: ((batch: ReturnType<typeof writeBatch>) => void)[]
+  ): Promise<void> {
+    for (let i = 0; i < actions.length; i += 450) {
+      const batch = writeBatch(db);
+      for (const action of actions.slice(i, i + 450)) {
+        action(batch);
+      }
+      await batch.commit();
+    }
+  }
 
   // ----------------------------------------------------------------------
   // Group reads (multi-user shared, scoped via memberUids array-contains)
@@ -257,6 +285,7 @@ export function makeRepository(uid: string) {
     splits: SplitPair[];
     timestamp?: number;
     currency?: string;
+    category?: ExpenseCategorySlug;
   }): Promise<void> {
     const ref = doc(expensesRef(params.groupId));
     const expense: Expense = {
@@ -270,8 +299,45 @@ export function makeRepository(uid: string) {
       currency: params.currency ?? "USD",
       splits: splitsToMap(params.splits),
       createdByUid: uid,
+      category: params.category,
     };
     await setDoc(ref, expense);
+  }
+
+  async function createExpensesWithSplits(
+    expenses: Array<{
+      groupId: string;
+      description: string;
+      amount: number;
+      paidById: string;
+      splitType: SplitType;
+      splits: SplitPair[];
+      timestamp?: number;
+      currency?: string;
+      category?: ExpenseCategorySlug;
+    }>
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    const actions = expenses.map((params) => {
+      const ref = doc(expensesRef(params.groupId));
+      ids.push(ref.id);
+      const expense: Expense = {
+        id: ref.id,
+        groupId: params.groupId,
+        description: params.description.trim(),
+        amount: params.amount,
+        paidById: params.paidById,
+        splitType: params.splitType,
+        timestamp: params.timestamp ?? Date.now(),
+        currency: params.currency ?? "USD",
+        splits: splitsToMap(params.splits),
+        createdByUid: uid,
+        category: params.category,
+      };
+      return (batch: ReturnType<typeof writeBatch>) => batch.set(ref, expense);
+    });
+    await commitBatched(actions);
+    return ids;
   }
 
   async function deleteExpense(expense: Expense): Promise<void> {
@@ -360,6 +426,71 @@ export function makeRepository(uid: string) {
     return onSnapshot(q, (snap) => cb(snap.docs.map(toAdHocPayment)), snapshotError("adhocPayments"));
   }
 
+  async function migrateLocalFriendAliases(): Promise<void> {
+    const [friendsSnap, expensesSnap, paymentsSnap] = await Promise.all([
+      getDocs(friendsRef()),
+      getDocs(adhocExpensesRef()),
+      getDocs(adhocPaymentsRef()),
+    ]);
+
+    const identityIndex = buildFriendIdentityIndex(friendsSnap.docs.map(toFriend));
+    const hasAliases = Array.from(identityIndex.aliasesByCanonicalId.values()).some(
+      (aliases) => aliases.length > 1
+    );
+    if (!hasAliases) return;
+
+    const expenses = expensesSnap.docs.map(toAdHocExpense);
+    const payments = paymentsSnap.docs.map(toAdHocPayment);
+    const canonicalExpenses = canonicalizeAdHocExpenses(
+      expenses,
+      identityIndex.aliasToCanonicalId
+    );
+    const canonicalPayments = canonicalizeAdHocPayments(
+      payments,
+      identityIndex.aliasToCanonicalId
+    );
+
+    const actions: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
+
+    expenses.forEach((expense, index) => {
+      if (expense.mirroredFromPath) return;
+      const canonical = canonicalExpenses[index];
+      if (
+        expense.paidByFriendId !== canonical.paidByFriendId ||
+        !numberMapsEqual(expense.splits, canonical.splits)
+      ) {
+        actions.push((batch) =>
+          batch.update(expensesSnap.docs[index].ref, {
+            paidByFriendId: canonical.paidByFriendId,
+            splits: canonical.splits,
+          })
+        );
+      }
+    });
+
+    payments.forEach((payment, index) => {
+      if (payment.mirroredFromPath) return;
+      const canonical = canonicalPayments[index];
+      if (
+        payment.fromFriendId !== canonical.fromFriendId ||
+        payment.toFriendId !== canonical.toFriendId
+      ) {
+        actions.push((batch) =>
+          batch.update(paymentsSnap.docs[index].ref, {
+            fromFriendId: canonical.fromFriendId,
+            toFriendId: canonical.toFriendId,
+          })
+        );
+      }
+    });
+
+    // Keep alias friend docs on the client. Firestore rules intentionally block
+    // clients from updating mirrored ledger docs, so deleting aliases here could
+    // make server-created history impossible to remap until the admin function
+    // runs. The read model still collapses these aliases immediately.
+    await commitBatched(actions);
+  }
+
   async function createFriend(
     name: string,
     email: string,
@@ -416,23 +547,45 @@ export function makeRepository(uid: string) {
     batch.set(doc(db, "users", uid, "friends", target.uid), mine);
     batch.set(doc(db, "users", target.uid, "friends", uid), theirs);
     await batch.commit();
+    await migrateLocalFriendAliases();
   }
 
   async function deleteFriend(friend: Friend): Promise<void> {
     if (!friend.id) return;
-    const [expensesSnap, paymentsSnap] = await Promise.all([
+    const [friendsSnap, expensesSnap, paymentsSnap] = await Promise.all([
+      getDocs(friendsRef()),
       getDocs(adhocExpensesRef()),
       getDocs(adhocPaymentsRef()),
     ]);
-    const balances = calculateFriendBalances(
-      [friend],
+
+    const identityIndex = buildFriendIdentityIndex(friendsSnap.docs.map(toFriend));
+    const canonicalId = identityIndex.aliasToCanonicalId.get(friend.id) ?? friend.id;
+    const canonicalFriend = identityIndex.canonicalById.get(canonicalId) ?? friend;
+    const canonicalExpenses = canonicalizeAdHocExpenses(
       expensesSnap.docs.map(toAdHocExpense),
-      paymentsSnap.docs.map(toAdHocPayment)
+      identityIndex.aliasToCanonicalId
+    );
+    const canonicalPayments = canonicalizeAdHocPayments(
+      paymentsSnap.docs.map(toAdHocPayment),
+      identityIndex.aliasToCanonicalId
+    );
+    const balances = calculateFriendBalances(
+      [canonicalFriend],
+      canonicalExpenses,
+      canonicalPayments
     );
     if (balances.some((b) => Math.abs(b.netBalance) > 0.01)) {
       throw new Error("Settle this friend before deleting them.");
     }
-    await deleteDoc(doc(friendsRef(), friend.id));
+
+    const aliases = identityIndex.aliasesByCanonicalId.get(canonicalId) ?? [
+      friend.id,
+    ];
+    await commitBatched(
+      aliases.map((aliasId) => (batch) =>
+        batch.delete(doc(friendsRef(), aliasId))
+      )
+    );
   }
 
   async function createAdHocExpenseWithSplits(params: {
@@ -443,6 +596,7 @@ export function makeRepository(uid: string) {
     splits: SplitPair[];
     currency?: string;
     timestamp?: number;
+    category?: ExpenseCategorySlug;
   }): Promise<string> {
     const ref = doc(adhocExpensesRef());
     const expense: AdHocExpense = {
@@ -455,9 +609,44 @@ export function makeRepository(uid: string) {
       currency: params.currency ?? "USD",
       splits: splitsToMap(params.splits),
       createdByUid: uid,
+      category: params.category,
     };
     await setDoc(ref, expense);
     return ref.id;
+  }
+
+  async function createAdHocExpensesWithSplits(
+    expenses: Array<{
+      description: string;
+      amount: number;
+      paidByFriendId: string;
+      splitType: SplitType;
+      splits: SplitPair[];
+      currency?: string;
+      timestamp?: number;
+      category?: ExpenseCategorySlug;
+    }>
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    const actions = expenses.map((params) => {
+      const ref = doc(adhocExpensesRef());
+      ids.push(ref.id);
+      const expense: AdHocExpense = {
+        id: ref.id,
+        description: params.description.trim(),
+        amount: params.amount,
+        paidByFriendId: params.paidByFriendId,
+        splitType: params.splitType,
+        timestamp: params.timestamp ?? Date.now(),
+        currency: params.currency ?? "USD",
+        splits: splitsToMap(params.splits),
+        createdByUid: uid,
+        category: params.category,
+      };
+      return (batch: ReturnType<typeof writeBatch>) => batch.set(ref, expense);
+    });
+    await commitBatched(actions);
+    return ids;
   }
 
   async function deleteAdHocExpense(expense: AdHocExpense): Promise<void> {
@@ -652,6 +841,7 @@ export function makeRepository(uid: string) {
     subscribePayments,
     createGroupWithMembers,
     createExpenseWithSplits,
+    createExpensesWithSplits,
     deleteExpense,
     recordPayment,
     deletePayment,
@@ -664,6 +854,7 @@ export function makeRepository(uid: string) {
     addRegisteredFriend,
     deleteFriend,
     createAdHocExpenseWithSplits,
+    createAdHocExpensesWithSplits,
     deleteAdHocExpense,
     recordAdHocPayment,
     deleteAdHocPayment,

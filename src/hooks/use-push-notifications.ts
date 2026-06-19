@@ -35,6 +35,23 @@ async function messagingModules() {
   return { ...mod, supported };
 }
 
+function pushSetupErrorMessage(err: unknown): string {
+  const message =
+    err instanceof Error ? err.message : "Could not enable browser push.";
+  const code =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: unknown }).code)
+      : "";
+  if (
+    code === "permission-denied" ||
+    code === "firestore/permission-denied" ||
+    message.includes("Missing or insufficient permissions")
+  ) {
+    return "Notification backend is not deployed yet. Deploy Firestore rules and Cloud Functions, then try again.";
+  }
+  return message;
+}
+
 export function usePushNotifications() {
   const repo = useRepository();
   const { preferences, updatePreferences } = useNotificationPreferences();
@@ -97,8 +114,7 @@ export function usePushNotifications() {
         body: "SplitSync can now notify this browser.",
       });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not enable browser push.";
+      const message = pushSetupErrorMessage(err);
       setError(message);
       showToast({ title: "Push setup failed", body: message });
     } finally {
@@ -127,8 +143,7 @@ export function usePushNotifications() {
         body: "This browser will only show in-app notifications.",
       });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not disable browser push.";
+      const message = pushSetupErrorMessage(err);
       setError(message);
       showToast({ title: "Push update failed", body: message });
     } finally {

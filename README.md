@@ -60,7 +60,10 @@ backend:
 cp .env.local.example .env.local
 ```
 
-4. Update [`.firebaserc`](.firebaserc) with your real project id.
+4. Add `GOOGLE_GEMINI_API_KEY` if you want AI statement parsing for the
+   statement expense importer. Without it, statement parsing falls back to the
+   local pattern parser.
+5. Update [`.firebaserc`](.firebaserc) with your real project id.
 
 ### 3. Run
 
@@ -126,3 +129,6 @@ Firestore collections (shared with the legacy Android app):
 /users/{uid}/adhocPayments/{paymentId}
 /users/{uid}/groupInvites/{groupId}
 ```
+
+Expense documents may include an optional `category` slug when created from a
+recognized statement import.

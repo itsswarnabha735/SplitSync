@@ -46,3 +46,7 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: GOOGLE_GEMINI_API_KEY
+    secret: google-gemini-api-key
+    availability:
+      - RUNTIME

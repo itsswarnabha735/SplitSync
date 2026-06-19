@@ -9,6 +9,7 @@ import {
   HandCoins,
   Loader2,
   MoreVertical,
+  Upload,
 } from "lucide-react";
 
 import type { Friend, FriendWithBalance } from "@/lib/models";
@@ -22,6 +23,7 @@ import { EmptyState } from "@/components/empty-state";
 import { AddFriendDialog } from "@/components/dialogs/add-friend-dialog";
 import { AddAdHocExpenseDialog } from "@/components/dialogs/add-adhoc-expense-dialog";
 import { SettleAdHocDialog } from "@/components/dialogs/settle-adhoc-dialog";
+import { StatementImportDialog } from "@/components/import/statement-import-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +43,7 @@ export function FriendsTab({
 
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
+  const [showStatementImport, setShowStatementImport] = useState(false);
   const [settleTarget, setSettleTarget] = useState<FriendWithBalance | null>(
     null
   );
@@ -91,6 +94,15 @@ export function FriendsTab({
           >
             <UserPlus className="h-4 w-4" />
             Add friend
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowStatementImport(true)}
+            disabled={friends.length === 0}
+          >
+            <Upload className="h-4 w-4" />
+            Import
           </Button>
           <Button
             size="sm"
@@ -184,6 +196,11 @@ export function FriendsTab({
         open={showAddExpense}
         onOpenChange={setShowAddExpense}
         friends={friends}
+      />
+      <StatementImportDialog
+        open={showStatementImport}
+        onOpenChange={setShowStatementImport}
+        target={{ kind: "friend", friends }}
       />
       <SettleAdHocDialog
         target={settleTarget}

@@ -18,6 +18,7 @@ import {
   Payment,
   SplitType,
 } from "@/lib/models";
+import { isExpenseCategorySlug } from "@/lib/expense-categories";
 
 type AnySnap = QueryDocumentSnapshot<DocumentData> | DocumentSnapshot<DocumentData>;
 
@@ -37,6 +38,9 @@ function splitMap(v: unknown): Record<string, number> {
 }
 function splitType(v: unknown): SplitType {
   return v === "EXACT" ? "EXACT" : "EQUAL";
+}
+function category(v: unknown) {
+  return isExpenseCategorySlug(v) ? v : undefined;
 }
 function notificationType(v: unknown): NotificationType {
   const known: NotificationType[] = [
@@ -128,6 +132,7 @@ export function toExpense(d: AnySnap): Expense {
     currency: str(data.currency, "USD"),
     splits: splitMap(data.splits),
     createdByUid: str(data.createdByUid) || undefined,
+    category: category(data.category),
   };
 }
 
@@ -170,6 +175,7 @@ export function toAdHocExpense(d: AnySnap): AdHocExpense {
     currency: str(data.currency, "USD"),
     splits: splitMap(data.splits),
     createdByUid: str(data.createdByUid) || undefined,
+    category: category(data.category),
     mirroredFromPath: str(data.mirroredFromPath) || undefined,
     mirroredFromUid: str(data.mirroredFromUid) || undefined,
     originalId: str(data.originalId) || undefined,

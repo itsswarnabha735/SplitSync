@@ -1,8 +1,11 @@
 # --- Next.js / Node ---
 /node_modules
+functions/node_modules
 /.next/
 /out/
 /build
+/public/pdf.min.mjs
+/public/pdf.worker.min.mjs
 next-env.d.ts
 *.tsbuildinfo
 

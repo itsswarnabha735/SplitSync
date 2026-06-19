@@ -14,6 +14,8 @@
  *   /users/{uid}/groupInvites/{groupId}
  */
 
+import type { ExpenseCategorySlug } from "@/lib/expense-categories";
+
 /**
  * Stable sentinel used inside ad-hoc collections to represent the signed-in
  * user themselves (mirrors `YOU_ID` from the Kotlin model).
@@ -54,6 +56,8 @@ export interface Expense {
   splits: Record<string, number>;
   /** uid of the user who created the ledger entry. */
   createdByUid?: string;
+  /** Optional recognized category for imported or manually categorized expenses. */
+  category?: ExpenseCategorySlug;
 }
 
 export interface Payment {
@@ -93,6 +97,8 @@ export interface AdHocExpense {
   splits: Record<string, number>;
   /** uid of the user who created the ledger entry. */
   createdByUid?: string;
+  /** Optional recognized category for imported or manually categorized expenses. */
+  category?: ExpenseCategorySlug;
   /** Present on server-created mirror docs in a linked friend's ledger. */
   mirroredFromPath?: string;
   mirroredFromUid?: string;

@@ -33,6 +33,62 @@ function dataOf(snapshot) {
   return snapshot?.data() || {};
 }
 
+function normalizeEmail(email) {
+  return (email || "").trim().toLowerCase();
+}
+
+function normalizeName(name) {
+  return (name || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function strongUid(friend) {
+  return (friend.linkedUid || friend.id || "").trim();
+}
+
+function hasStrongFriendIdentity(friend) {
+  return Boolean((friend.linkedUid || "").trim() || normalizeEmail(friend.email));
+}
+
+function stronglyMatchesFriend(a, b) {
+  const aUid = strongUid(a);
+  const bUid = strongUid(b);
+  if (aUid && bUid && aUid === bUid) return true;
+
+  const aEmail = normalizeEmail(a.email);
+  const bEmail = normalizeEmail(b.email);
+  return Boolean(aEmail && bEmail && aEmail === bEmail);
+}
+
+function canonicalParticipantId(id, aliasToCanonicalId) {
+  if (id === SELF) return SELF;
+  return aliasToCanonicalId.get(id) || id;
+}
+
+function canonicalAmountMap(values, aliasToCanonicalId) {
+  return Object.entries(values || {}).reduce((out, [id, amount]) => {
+    const canonicalId = canonicalParticipantId(id, aliasToCanonicalId);
+    out[canonicalId] = (out[canonicalId] || 0) + (amount || 0);
+    return out;
+  }, {});
+}
+
+function numberMapsEqual(a = {}, b = {}) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return (
+    aKeys.length === bKeys.length &&
+    aKeys.every((key) => a[key] === b[key])
+  );
+}
+
+async function commitAdminActions(actions) {
+  for (let i = 0; i < actions.length; i += 450) {
+    const batch = db.batch();
+    actions.slice(i, i + 450).forEach((action) => action(batch));
+    await batch.commit();
+  }
+}
+
 function actorUid(event, data = {}) {
   return (
     event.authId ||
@@ -190,9 +246,12 @@ async function isGroupSettled(groupId, currency) {
 async function ensureFriendDoc(ownerUid, friendUid) {
   const ref = db.doc(`users/${ownerUid}/friends/${friendUid}`);
   const existing = await ref.get();
-  if (existing.exists) return;
+  if (existing.exists) {
+    await migrateFriendAliases(ownerUid, { id: existing.id, ...dataOf(existing) });
+    return;
+  }
   const profile = dataOf(await db.doc(`users/${friendUid}`).get());
-  await ref.set({
+  const friend = {
     id: friendUid,
     name: profile.displayName || profile.email || "SplitSync user",
     email: profile.email || "",
@@ -200,6 +259,97 @@ async function ensureFriendDoc(ownerUid, friendUid) {
     createdAt: now(),
     linkedUid: friendUid,
     createdByUid: friendUid,
+  };
+  await ref.set(friend);
+  await migrateFriendAliases(ownerUid, friend);
+}
+
+async function migrateFriendAliases(ownerUid, canonicalFriend) {
+  const friendsSnap = await db.collection(`users/${ownerUid}/friends`).get();
+  const friends = friendsSnap.docs.map((doc) => ({ id: doc.id, ...dataOf(doc) }));
+  const canonical = { ...canonicalFriend, id: canonicalFriend.id || strongUid(canonicalFriend) };
+  const canonicalName = normalizeName(canonical.name);
+
+  const strongSameName = friends.filter(
+    (friend) =>
+      normalizeName(friend.name) === canonicalName &&
+      hasStrongFriendIdentity(friend)
+  );
+  const canAdoptNameOnly =
+    Boolean(canonicalName) &&
+    strongSameName.length > 0 &&
+    strongSameName.every((friend) => stronglyMatchesFriend(friend, canonical));
+
+  const aliases = friends.filter((friend) => {
+    if (friend.id === canonical.id) return false;
+    if (stronglyMatchesFriend(friend, canonical)) return true;
+    return (
+      canAdoptNameOnly &&
+      !hasStrongFriendIdentity(friend) &&
+      normalizeName(friend.name) === canonicalName
+    );
+  });
+
+  if (aliases.length === 0) return;
+
+  const aliasToCanonicalId = new Map(
+    aliases.map((friend) => [friend.id, canonical.id])
+  );
+  aliasToCanonicalId.set(canonical.id, canonical.id);
+
+  const [expensesSnap, paymentsSnap] = await Promise.all([
+    db.collection(`users/${ownerUid}/adhocExpenses`).get(),
+    db.collection(`users/${ownerUid}/adhocPayments`).get(),
+  ]);
+
+  const actions = [];
+
+  expensesSnap.docs.forEach((doc) => {
+    const expense = dataOf(doc);
+    const paidByFriendId = canonicalParticipantId(
+      expense.paidByFriendId,
+      aliasToCanonicalId
+    );
+    const splits = canonicalAmountMap(expense.splits, aliasToCanonicalId);
+    if (
+      paidByFriendId !== expense.paidByFriendId ||
+      !numberMapsEqual(splits, expense.splits)
+    ) {
+      actions.push((batch) => batch.update(doc.ref, { paidByFriendId, splits }));
+    }
+  });
+
+  paymentsSnap.docs.forEach((doc) => {
+    const payment = dataOf(doc);
+    const fromFriendId = canonicalParticipantId(
+      payment.fromFriendId,
+      aliasToCanonicalId
+    );
+    const toFriendId = canonicalParticipantId(
+      payment.toFriendId,
+      aliasToCanonicalId
+    );
+    if (
+      fromFriendId !== payment.fromFriendId ||
+      toFriendId !== payment.toFriendId
+    ) {
+      actions.push((batch) =>
+        batch.update(doc.ref, { fromFriendId, toFriendId })
+      );
+    }
+  });
+
+  aliases.forEach((friend) => {
+    actions.push((batch) =>
+      batch.delete(db.doc(`users/${ownerUid}/friends/${friend.id}`))
+    );
+  });
+
+  await commitAdminActions(actions);
+  logger.info("Migrated duplicate friend aliases", {
+    ownerUid,
+    canonicalFriendId: canonical.id,
+    aliasIds: aliases.map((friend) => friend.id),
   });
 }
 
@@ -451,6 +601,13 @@ exports.onFriendCreated = onDocumentCreatedWithAuthContext(
   "users/{uid}/friends/{friendId}",
   async (event) => {
     const friend = dataOf(event.data);
+    if (friend.linkedUid && event.params.friendId === friend.linkedUid) {
+      await migrateFriendAliases(event.params.uid, {
+        id: event.params.friendId,
+        ...friend,
+      });
+    }
+
     const actor = actorUid(event, friend);
     if (!actor || actor === event.params.uid) return;
     if (friend.linkedUid !== actor || event.params.friendId !== actor) return;
