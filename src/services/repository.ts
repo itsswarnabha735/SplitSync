@@ -29,15 +29,23 @@ import {
   AdHocExpense,
   AdHocPayment,
   Expense,
+  ExpenseComment,
+  ExpenseDisputeStatus,
   ExpenseImportProvenance,
   FcmToken,
   Friend,
   Group,
+  GroupTemplate,
   GroupInvite,
   GroupMember,
   Notification,
   NotificationPreference,
+  PaymentMethod,
   Payment,
+  RecurringExpense,
+  RecurringFrequency,
+  SettlementRequest,
+  SettlementRequestStatus,
   SplitType,
 } from "@/lib/models";
 import type { SplitPair } from "@/lib/splits";
@@ -46,6 +54,7 @@ import {
   toAdHocExpense,
   toAdHocPayment,
   toExpense,
+  toExpenseComment,
   toFriend,
   toGroup,
   toInvite,
@@ -53,6 +62,8 @@ import {
   toNotification,
   toNotificationPreference,
   toPayment,
+  toRecurringExpense,
+  toSettlementRequest,
 } from "./converters";
 
 type Cb<T> = (items: T) => void;
@@ -70,6 +81,10 @@ export interface ExpenseWriteMetadata extends ExpenseImportProvenance {
   notes?: string;
   sourceConfidence?: number;
   sourceWarnings?: string[];
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRate?: number;
+  fxNote?: string;
 }
 
 export interface ExpenseUpdatePatch extends ExpenseWriteMetadata {
@@ -81,6 +96,74 @@ export interface ExpenseUpdatePatch extends ExpenseWriteMetadata {
   timestamp?: number;
   currency?: string;
   category?: ExpenseCategorySlug;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRate?: number;
+  fxNote?: string;
+  disputeStatus?: ExpenseDisputeStatus;
+  disputedByUid?: string;
+  disputedAt?: number;
+  disputeNote?: string;
+}
+
+export interface AdHocExpenseUpdatePatch extends ExpenseWriteMetadata {
+  description?: string;
+  amount?: number;
+  paidByFriendId?: string;
+  splitType?: SplitType;
+  splits?: SplitPair[];
+  timestamp?: number;
+  currency?: string;
+  category?: ExpenseCategorySlug;
+}
+
+export interface PaymentUpdatePatch {
+  fromMemberId?: string;
+  toMemberId?: string;
+  amount?: number;
+  timestamp?: number;
+  currency?: string;
+}
+
+export interface SettlementRequestPatch {
+  status?: SettlementRequestStatus;
+  message?: string;
+  remindAfter?: number;
+  lastRemindedAt?: number;
+}
+
+export interface GroupProfilePatch {
+  name?: string;
+  description?: string;
+  template?: GroupTemplate;
+  defaultCurrency?: string;
+  settlementCurrency?: string;
+  travelMode?: boolean;
+}
+
+export interface MemberPaymentPatch {
+  preferredPaymentMethod?: PaymentMethod;
+  paymentHandle?: string;
+  paymentLink?: string;
+}
+
+export interface RecurringExpenseWrite {
+  groupId: string;
+  description: string;
+  amount: number;
+  paidById: string;
+  splitType: SplitType;
+  splits: SplitPair[];
+  currency?: string;
+  category?: ExpenseCategorySlug;
+  frequency: RecurringFrequency;
+  nextDueAt: number;
+  active?: boolean;
+  notes?: string;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRate?: number;
+  fxNote?: string;
 }
 
 function snapshotError(label: string, onError?: ErrorCb) {
@@ -106,6 +189,19 @@ function withoutUndefined<T extends object>(value: T): T {
   ) as T;
 }
 
+function nextRecurringDueAt(
+  currentDueAt: number,
+  frequency: RecurringFrequency
+): number {
+  const date = new Date(currentDueAt || Date.now());
+  if (frequency === "weekly") date.setDate(date.getDate() + 7);
+  else if (frequency === "quarterly") date.setMonth(date.getMonth() + 3);
+  else if (frequency === "yearly") date.setFullYear(date.getFullYear() + 1);
+  else date.setMonth(date.getMonth() + 1);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
 /**
  * Firestore data access for SplitSync, ported from the Android
  * `SplitSyncRepository`. A repository instance is bound to the signed-in user's
@@ -125,6 +221,12 @@ export function makeRepository(uid: string) {
     collection(db, "groups", groupId, "expenses");
   const paymentsRef = (groupId: string) =>
     collection(db, "groups", groupId, "payments");
+  const settlementRequestsRef = (groupId: string) =>
+    collection(db, "groups", groupId, "settlementRequests");
+  const recurringExpensesRef = (groupId: string) =>
+    collection(db, "groups", groupId, "recurringExpenses");
+  const expenseCommentsRef = (groupId: string) =>
+    collection(db, "groups", groupId, "expenseComments");
 
   const friendsRef = () => collection(db, "users", uid, "friends");
   const adhocExpensesRef = () => collection(db, "users", uid, "adhocExpenses");
@@ -226,6 +328,45 @@ export function makeRepository(uid: string) {
     );
   }
 
+  function subscribeSettlementRequests(
+    groupId: string,
+    cb: Cb<SettlementRequest[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(settlementRequestsRef(groupId), orderBy("updatedAt", "desc"));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toSettlementRequest)),
+      snapshotError(`settlementRequests/${groupId}`, onError)
+    );
+  }
+
+  function subscribeRecurringExpenses(
+    groupId: string,
+    cb: Cb<RecurringExpense[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(recurringExpensesRef(groupId), orderBy("nextDueAt", "asc"));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toRecurringExpense)),
+      snapshotError(`recurringExpenses/${groupId}`, onError)
+    );
+  }
+
+  function subscribeExpenseComments(
+    groupId: string,
+    cb: Cb<ExpenseComment[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(expenseCommentsRef(groupId), orderBy("createdAt", "asc"));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toExpenseComment)),
+      snapshotError(`expenseComments/${groupId}`, onError)
+    );
+  }
+
   // ----------------------------------------------------------------------
   // Group writes
   // ----------------------------------------------------------------------
@@ -233,7 +374,13 @@ export function makeRepository(uid: string) {
     groupName: string,
     description: string,
     members: NewGroupMember[],
-    creator: { name: string; email: string }
+    creator: { name: string; email: string },
+    options: {
+      template?: GroupTemplate;
+      defaultCurrency?: string;
+      settlementCurrency?: string;
+      travelMode?: boolean;
+    } = {}
   ): Promise<string> {
     const groupRef = doc(groupsRef());
     const groupId = groupRef.id;
@@ -272,6 +419,12 @@ export function makeRepository(uid: string) {
       createdAt: Date.now(),
       createdBy: uid,
       memberUids,
+      status: "active",
+      template: options.template ?? "custom",
+      defaultCurrency: options.defaultCurrency ?? "USD",
+      settlementCurrency:
+        options.settlementCurrency ?? options.defaultCurrency ?? "USD",
+      travelMode: options.travelMode === true,
     };
     batch.set(groupRef, group);
 
@@ -299,6 +452,58 @@ export function makeRepository(uid: string) {
     }
     await batch.commit();
     return groupId;
+  }
+
+  async function updateGroupProfile(
+    group: Group,
+    patch: GroupProfilePatch
+  ): Promise<void> {
+    if (!group.id) return;
+    await updateDoc(
+      groupDoc(group.id),
+      withoutUndefined({
+        name: patch.name?.trim(),
+        description: patch.description?.trim(),
+        template: patch.template,
+        defaultCurrency: patch.defaultCurrency,
+        settlementCurrency: patch.settlementCurrency,
+        travelMode: patch.travelMode,
+      })
+    );
+  }
+
+  async function updateMemberPaymentProfile(
+    groupId: string,
+    memberId: string,
+    patch: MemberPaymentPatch
+  ): Promise<void> {
+    if (!groupId || !memberId) return;
+    await updateDoc(
+      doc(membersRef(groupId), memberId),
+      withoutUndefined({
+        preferredPaymentMethod: patch.preferredPaymentMethod,
+        paymentHandle: patch.paymentHandle?.trim(),
+        paymentLink: patch.paymentLink?.trim(),
+      })
+    );
+  }
+
+  async function setGroupArchived(group: Group, archived: boolean): Promise<void> {
+    if (!group.id) return;
+    await updateDoc(
+      groupDoc(group.id),
+      archived
+        ? {
+            status: "archived",
+            archivedAt: Date.now(),
+            archivedByUid: uid,
+          }
+        : {
+            status: "active",
+            archivedAt: 0,
+            archivedByUid: "",
+          }
+    );
   }
 
   async function createExpenseWithSplits(params: {
@@ -337,6 +542,10 @@ export function makeRepository(uid: string) {
       createdAt: now,
       updatedAt: now,
       editCount: 0,
+      originalAmount: params.originalAmount,
+      originalCurrency: params.originalCurrency,
+      exchangeRate: params.exchangeRate,
+      fxNote: params.fxNote?.trim(),
     };
     await setDoc(ref, withoutUndefined(expense));
     return ref.id;
@@ -383,6 +592,10 @@ export function makeRepository(uid: string) {
         createdAt: now,
         updatedAt: now,
         editCount: 0,
+        originalAmount: params.originalAmount,
+        originalCurrency: params.originalCurrency,
+        exchangeRate: params.exchangeRate,
+        fxNote: params.fxNote?.trim(),
       };
       return (batch: ReturnType<typeof writeBatch>) =>
         batch.set(ref, withoutUndefined(expense));
@@ -413,6 +626,139 @@ export function makeRepository(uid: string) {
     await updateDoc(doc(expensesRef(groupId), expenseId), withoutUndefined(next));
   }
 
+  async function updateExpenseDispute(
+    groupId: string,
+    expenseId: string,
+    patch: {
+      disputeStatus: ExpenseDisputeStatus;
+      disputeNote?: string;
+    }
+  ): Promise<void> {
+    if (!groupId || !expenseId) return;
+    await updateDoc(
+      doc(expensesRef(groupId), expenseId),
+      withoutUndefined({
+        disputeStatus: patch.disputeStatus,
+        disputeNote: patch.disputeNote?.trim(),
+        disputedByUid:
+          patch.disputeStatus === "needs_clarification" ? uid : undefined,
+        disputedAt:
+          patch.disputeStatus === "needs_clarification" ? Date.now() : undefined,
+        updatedAt: Date.now(),
+        lastEditedByUid: uid,
+        editCount: increment(1),
+      })
+    );
+  }
+
+  async function addExpenseComment(params: {
+    groupId: string;
+    expenseId: string;
+    body: string;
+    createdByName: string;
+  }): Promise<string> {
+    const ref = doc(expenseCommentsRef(params.groupId));
+    const comment: ExpenseComment = {
+      id: ref.id,
+      groupId: params.groupId,
+      expenseId: params.expenseId,
+      body: params.body.trim(),
+      createdAt: Date.now(),
+      createdByUid: uid,
+      createdByName: params.createdByName.trim() || "Someone",
+    };
+    await setDoc(ref, comment);
+    return ref.id;
+  }
+
+  async function createRecurringExpense(
+    params: RecurringExpenseWrite
+  ): Promise<string> {
+    const ref = doc(recurringExpensesRef(params.groupId));
+    const now = Date.now();
+    const recurring: RecurringExpense = {
+      id: ref.id,
+      groupId: params.groupId,
+      description: params.description.trim(),
+      amount: params.amount,
+      paidById: params.paidById,
+      splitType: params.splitType,
+      currency: params.currency ?? "USD",
+      splits: splitsToMap(params.splits),
+      category: params.category,
+      frequency: params.frequency,
+      nextDueAt: params.nextDueAt,
+      active: params.active !== false,
+      notes: params.notes?.trim(),
+      createdAt: now,
+      updatedAt: now,
+      createdByUid: uid,
+      originalAmount: params.originalAmount,
+      originalCurrency: params.originalCurrency,
+      exchangeRate: params.exchangeRate,
+      fxNote: params.fxNote?.trim(),
+    };
+    await setDoc(ref, withoutUndefined(recurring));
+    return ref.id;
+  }
+
+  async function updateRecurringExpense(
+    groupId: string,
+    recurringId: string,
+    patch: Partial<RecurringExpenseWrite> & {
+      splits?: SplitPair[];
+      lastPostedAt?: number;
+    }
+  ): Promise<void> {
+    if (!groupId || !recurringId) return;
+    await updateDoc(
+      doc(recurringExpensesRef(groupId), recurringId),
+      withoutUndefined({
+        ...patch,
+        description: patch.description?.trim(),
+        notes: patch.notes?.trim(),
+        fxNote: patch.fxNote?.trim(),
+        splits: patch.splits ? splitsToMap(patch.splits) : undefined,
+        updatedAt: Date.now(),
+      })
+    );
+  }
+
+  async function deleteRecurringExpense(
+    groupId: string,
+    recurringId: string
+  ): Promise<void> {
+    if (!groupId || !recurringId) return;
+    await deleteDoc(doc(recurringExpensesRef(groupId), recurringId));
+  }
+
+  async function postRecurringExpense(
+    recurring: RecurringExpense
+  ): Promise<string> {
+    const expenseId = await createExpenseWithSplits({
+      groupId: recurring.groupId,
+      description: recurring.description,
+      amount: recurring.amount,
+      paidById: recurring.paidById,
+      splitType: recurring.splitType,
+      splits: Object.entries(recurring.splits),
+      timestamp: recurring.nextDueAt,
+      currency: recurring.currency,
+      category: recurring.category,
+      notes: recurring.notes,
+      sourceType: "manual",
+      originalAmount: recurring.originalAmount,
+      originalCurrency: recurring.originalCurrency,
+      exchangeRate: recurring.exchangeRate,
+      fxNote: recurring.fxNote,
+    });
+    await updateRecurringExpense(recurring.groupId, recurring.id, {
+      nextDueAt: nextRecurringDueAt(recurring.nextDueAt, recurring.frequency),
+      lastPostedAt: Date.now(),
+    });
+    return expenseId;
+  }
+
   async function recordPayment(
     payment: Omit<Payment, "id">
   ): Promise<void> {
@@ -420,9 +766,79 @@ export function makeRepository(uid: string) {
     await setDoc(ref, { ...payment, id: ref.id, createdByUid: uid });
   }
 
+  async function updatePayment(
+    groupId: string,
+    paymentId: string,
+    patch: PaymentUpdatePatch
+  ): Promise<void> {
+    if (!groupId || !paymentId) return;
+    await updateDoc(
+      doc(paymentsRef(groupId), paymentId),
+      withoutUndefined({
+        ...patch,
+        updatedAt: Date.now(),
+        lastEditedByUid: uid,
+        editCount: increment(1),
+      })
+    );
+  }
+
   async function deletePayment(payment: Payment): Promise<void> {
     if (!payment.id || !payment.groupId) return;
     await deleteDoc(doc(paymentsRef(payment.groupId), payment.id));
+  }
+
+  async function createSettlementRequest(params: {
+    groupId: string;
+    fromMemberId: string;
+    toMemberId: string;
+    amount: number;
+    currency: string;
+    message: string;
+    remindAfter?: number;
+  }): Promise<string> {
+    const ref = doc(settlementRequestsRef(params.groupId));
+    const now = Date.now();
+    const request: SettlementRequest = {
+      id: ref.id,
+      groupId: params.groupId,
+      fromMemberId: params.fromMemberId,
+      toMemberId: params.toMemberId,
+      amount: params.amount,
+      currency: params.currency,
+      message: params.message.trim(),
+      status: "requested",
+      createdAt: now,
+      updatedAt: now,
+      requestedByUid: uid,
+      remindAfter: params.remindAfter,
+    };
+    await setDoc(ref, withoutUndefined(request));
+    return ref.id;
+  }
+
+  async function updateSettlementRequest(
+    groupId: string,
+    requestId: string,
+    patch: SettlementRequestPatch
+  ): Promise<void> {
+    if (!groupId || !requestId) return;
+    await updateDoc(
+      doc(settlementRequestsRef(groupId), requestId),
+      withoutUndefined({
+        ...patch,
+        message: patch.message?.trim(),
+        updatedAt: Date.now(),
+      })
+    );
+  }
+
+  async function deleteSettlementRequest(
+    groupId: string,
+    requestId: string
+  ): Promise<void> {
+    if (!groupId || !requestId) return;
+    await deleteDoc(doc(settlementRequestsRef(groupId), requestId));
   }
 
   /** Deletes a group and every subcollection doc (Firestore has no cascade). */
@@ -749,7 +1165,7 @@ export function makeRepository(uid: string) {
 
   async function updateAdHocExpense(
     expenseId: string,
-    patch: ExpenseUpdatePatch
+    patch: AdHocExpenseUpdatePatch
   ): Promise<void> {
     if (!expenseId) return;
     const next: Record<string, unknown> = {
@@ -948,13 +1364,29 @@ export function makeRepository(uid: string) {
     subscribeMembers,
     subscribeExpenses,
     subscribePayments,
+    subscribeSettlementRequests,
+    subscribeRecurringExpenses,
+    subscribeExpenseComments,
     createGroupWithMembers,
+    updateGroupProfile,
+    updateMemberPaymentProfile,
+    setGroupArchived,
     createExpenseWithSplits,
     createExpensesWithSplits,
     deleteExpense,
     updateExpense,
+    updateExpenseDispute,
+    addExpenseComment,
+    createRecurringExpense,
+    updateRecurringExpense,
+    deleteRecurringExpense,
+    postRecurringExpense,
     recordPayment,
+    updatePayment,
     deletePayment,
+    createSettlementRequest,
+    updateSettlementRequest,
+    deleteSettlementRequest,
     deleteGroup,
     searchUsersByEmail,
     subscribeFriends,

@@ -48,6 +48,30 @@ service cloud.firestore {
       return value in ["EQUAL", "EXACT"];
     }
 
+    function isGroupStatus(value) {
+      return value in ["active", "archived"];
+    }
+
+    function isGroupTemplate(value) {
+      return value in ["custom", "trip", "flatmates", "couple", "office", "event"];
+    }
+
+    function isPaymentMethod(value) {
+      return value in ["upi", "bank", "cash", "other"];
+    }
+
+    function isRecurringFrequency(value) {
+      return value in ["weekly", "monthly", "quarterly", "yearly"];
+    }
+
+    function isExpenseDisputeStatus(value) {
+      return value in ["none", "needs_clarification", "resolved"];
+    }
+
+    function isSettlementRequestStatus(value) {
+      return value in ["requested", "reminded", "dismissed", "settled"];
+    }
+
     function isExpenseCategory(value) {
       return value in [
         "food-dining", "groceries", "transport", "fuel", "shopping",
@@ -145,6 +169,52 @@ service cloud.firestore {
         );
     }
 
+    function hasValidExpenseFxMetadata() {
+      return (
+          !("originalAmount" in request.resource.data)
+          || isMoney(request.resource.data.originalAmount)
+        )
+        && (
+          !("originalCurrency" in request.resource.data)
+          || isCurrency(request.resource.data.originalCurrency)
+        )
+        && (
+          !("exchangeRate" in request.resource.data)
+          || (
+            request.resource.data.exchangeRate is number
+            && request.resource.data.exchangeRate > 0
+            && request.resource.data.exchangeRate <= 1000000
+          )
+        )
+        && (
+          !("fxNote" in request.resource.data)
+          || isString(request.resource.data.fxNote, 300)
+        );
+    }
+
+    function hasValidExpenseDisputeMetadata() {
+      return (
+          !("disputeStatus" in request.resource.data)
+          || isExpenseDisputeStatus(request.resource.data.disputeStatus)
+        )
+        && (
+          !("disputedByUid" in request.resource.data)
+          || isActorUid(request.resource.data.disputedByUid)
+          || (
+            "disputedByUid" in resource.data
+            && request.resource.data.disputedByUid == resource.data.disputedByUid
+          )
+        )
+        && (
+          !("disputedAt" in request.resource.data)
+          || isMillis(request.resource.data.disputedAt)
+        )
+        && (
+          !("disputeNote" in request.resource.data)
+          || isString(request.resource.data.disputeNote, 500)
+        );
+    }
+
     function isSmallStringMap(value) {
       return value is map && value.keys().size() > 0 && value.keys().size() <= 100;
     }
@@ -198,7 +268,9 @@ service cloud.firestore {
 
     function isGroupDoc(groupId) {
       return request.resource.data.keys().hasOnly([
-          "id", "name", "description", "createdAt", "createdBy", "memberUids"
+          "id", "name", "description", "createdAt", "createdBy", "memberUids",
+          "status", "archivedAt", "archivedByUid", "template",
+          "defaultCurrency", "settlementCurrency", "travelMode"
         ])
         && request.resource.data.keys().hasAll([
           "id", "name", "description", "createdAt", "createdBy", "memberUids"
@@ -210,7 +282,35 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.createdBy, 128)
         && request.resource.data.memberUids is list
         && request.resource.data.memberUids.size() > 0
-        && request.resource.data.memberUids.size() <= 100;
+        && request.resource.data.memberUids.size() <= 100
+        && (
+          !("status" in request.resource.data)
+          || isGroupStatus(request.resource.data.status)
+        )
+        && (
+          !("archivedAt" in request.resource.data)
+          || isMillis(request.resource.data.archivedAt)
+        )
+        && (
+          !("archivedByUid" in request.resource.data)
+          || isString(request.resource.data.archivedByUid, 128)
+        )
+        && (
+          !("template" in request.resource.data)
+          || isGroupTemplate(request.resource.data.template)
+        )
+        && (
+          !("defaultCurrency" in request.resource.data)
+          || isCurrency(request.resource.data.defaultCurrency)
+        )
+        && (
+          !("settlementCurrency" in request.resource.data)
+          || isCurrency(request.resource.data.settlementCurrency)
+        )
+        && (
+          !("travelMode" in request.resource.data)
+          || request.resource.data.travelMode is bool
+        );
     }
 
     function groupImmutableFieldsUnchanged() {
@@ -224,7 +324,10 @@ service cloud.firestore {
         && isGroupDoc(groupId)
         && groupImmutableFieldsUnchanged()
         && request.resource.data.memberUids == resource.data.memberUids
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name", "description", "status", "archivedAt", "archivedByUid",
+          "template", "defaultCurrency", "settlementCurrency", "travelMode"
+        ]);
     }
 
     function isInviteAcceptance(groupId) {
@@ -240,7 +343,8 @@ service cloud.firestore {
 
     function isMemberDoc(groupId, memberId) {
       return request.resource.data.keys().hasOnly([
-          "id", "groupId", "name", "email", "linkedUid"
+          "id", "groupId", "name", "email", "linkedUid",
+          "preferredPaymentMethod", "paymentHandle", "paymentLink"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "name", "email", "linkedUid"
@@ -253,6 +357,18 @@ service cloud.firestore {
         && (
           request.resource.data.linkedUid == ""
           || request.resource.data.linkedUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
+        )
+        && (
+          !("preferredPaymentMethod" in request.resource.data)
+          || isPaymentMethod(request.resource.data.preferredPaymentMethod)
+        )
+        && (
+          !("paymentHandle" in request.resource.data)
+          || isString(request.resource.data.paymentHandle, 160)
+        )
+        && (
+          !("paymentLink" in request.resource.data)
+          || isString(request.resource.data.paymentLink, 500)
         );
     }
 
@@ -271,6 +387,50 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(memberId));
     }
 
+    function linkedMemberIsActor(groupId, memberId) {
+      return memberExists(groupId, memberId)
+        && get(/databases/$(database)/documents/groups/$(groupId)/members/$(memberId)).data.linkedUid == request.auth.uid;
+    }
+
+    function canEditExistingGroupRow(groupId, payerMemberId) {
+      return groupMember(groupId)
+        && (
+          (
+            "createdByUid" in resource.data
+            && resource.data.createdByUid == request.auth.uid
+          )
+          || linkedMemberIsActor(groupId, payerMemberId)
+          || (
+            !("createdByUid" in resource.data)
+            && groupCreator(groupId)
+          )
+        );
+    }
+
+    function canDeleteExistingGroupRow(groupId, payerMemberId) {
+      return canEditExistingGroupRow(groupId, payerMemberId);
+    }
+
+    function canEditExistingGroupPayment(groupId) {
+      return canEditExistingGroupRow(groupId, resource.data.fromMemberId);
+    }
+
+    function canDeleteExistingGroupPayment(groupId) {
+      return canEditExistingGroupPayment(groupId);
+    }
+
+    function canEditExistingSettlementRequest(groupId) {
+      return groupMember(groupId)
+        && (
+          resource.data.requestedByUid == request.auth.uid
+          || linkedMemberIsActor(groupId, resource.data.fromMemberId)
+        );
+    }
+
+    function canDeleteExistingSettlementRequest(groupId) {
+      return canEditExistingSettlementRequest(groupId);
+    }
+
     function isExpenseDoc(groupId, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -278,7 +438,9 @@ service cloud.firestore {
           "sourceType", "importBatchId", "transactionFingerprint",
           "parserMode", "parserConfidence", "notes", "sourceConfidence",
           "sourceWarnings", "createdAt", "updatedAt", "lastEditedByUid",
-          "editCount"
+          "editCount", "originalAmount", "originalCurrency", "exchangeRate",
+          "fxNote", "disputeStatus", "disputedByUid", "disputedAt",
+          "disputeNote"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -301,13 +463,16 @@ service cloud.firestore {
           || isExpenseCategory(request.resource.data.category)
         )
         && hasValidExpenseImportProvenance()
-        && hasValidExpenseMetadata();
+        && hasValidExpenseMetadata()
+        && hasValidExpenseFxMetadata()
+        && hasValidExpenseDisputeMetadata();
     }
 
     function isPaymentDoc(groupId, paymentId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "fromMemberId", "toMemberId", "amount",
-          "timestamp", "currency", "createdByUid"
+          "timestamp", "currency", "createdByUid", "updatedAt",
+          "lastEditedByUid", "editCount"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "fromMemberId", "toMemberId", "amount",
@@ -324,7 +489,131 @@ service cloud.firestore {
         && (
           !("createdByUid" in request.resource.data)
           || isActorUid(request.resource.data.createdByUid)
+          || (
+            "createdByUid" in resource.data
+            && request.resource.data.createdByUid == resource.data.createdByUid
+          )
+        )
+        && (
+          !("updatedAt" in request.resource.data)
+          || isMillis(request.resource.data.updatedAt)
+        )
+        && (
+          !("lastEditedByUid" in request.resource.data)
+          || isActorUid(request.resource.data.lastEditedByUid)
+        )
+        && (
+          !("editCount" in request.resource.data)
+          || (
+            request.resource.data.editCount is number
+            && request.resource.data.editCount >= 0
+            && request.resource.data.editCount <= 100000
+          )
         );
+    }
+
+    function isSettlementRequestDoc(groupId, requestId) {
+      return request.resource.data.keys().hasOnly([
+          "id", "groupId", "fromMemberId", "toMemberId", "amount", "currency",
+          "message", "status", "createdAt", "updatedAt", "requestedByUid",
+          "lastRemindedAt", "remindAfter"
+        ])
+        && request.resource.data.keys().hasAll([
+          "id", "groupId", "fromMemberId", "toMemberId", "amount", "currency",
+          "message", "status", "createdAt", "updatedAt", "requestedByUid"
+        ])
+        && request.resource.data.id == requestId
+        && request.resource.data.groupId == groupId
+        && request.resource.data.fromMemberId != request.resource.data.toMemberId
+        && memberExists(groupId, request.resource.data.fromMemberId)
+        && memberExists(groupId, request.resource.data.toMemberId)
+        && isMoney(request.resource.data.amount)
+        && isCurrency(request.resource.data.currency)
+        && isString(request.resource.data.message, 500)
+        && isSettlementRequestStatus(request.resource.data.status)
+        && isMillis(request.resource.data.createdAt)
+        && isMillis(request.resource.data.updatedAt)
+        && (
+          isActorUid(request.resource.data.requestedByUid)
+          || (
+            "requestedByUid" in resource.data
+            && request.resource.data.requestedByUid == resource.data.requestedByUid
+          )
+        )
+        && (
+          !("lastRemindedAt" in request.resource.data)
+          || isMillis(request.resource.data.lastRemindedAt)
+        )
+        && (
+          !("remindAfter" in request.resource.data)
+          || isMillis(request.resource.data.remindAfter)
+        );
+    }
+
+    function isRecurringExpenseDoc(groupId, recurringId) {
+      return request.resource.data.keys().hasOnly([
+          "id", "groupId", "description", "amount", "paidById", "splitType",
+          "currency", "splits", "category", "frequency", "nextDueAt",
+          "active", "notes", "createdAt", "updatedAt", "createdByUid",
+          "lastPostedAt", "originalAmount", "originalCurrency",
+          "exchangeRate", "fxNote"
+        ])
+        && request.resource.data.keys().hasAll([
+          "id", "groupId", "description", "amount", "paidById", "splitType",
+          "currency", "splits", "frequency", "nextDueAt", "active",
+          "createdAt", "updatedAt", "createdByUid"
+        ])
+        && request.resource.data.id == recurringId
+        && request.resource.data.groupId == groupId
+        && isNonEmptyString(request.resource.data.description, 160)
+        && isMoney(request.resource.data.amount)
+        && memberExists(groupId, request.resource.data.paidById)
+        && isSplitType(request.resource.data.splitType)
+        && isCurrency(request.resource.data.currency)
+        && isSmallStringMap(request.resource.data.splits)
+        && (
+          !("category" in request.resource.data)
+          || isExpenseCategory(request.resource.data.category)
+        )
+        && isRecurringFrequency(request.resource.data.frequency)
+        && isMillis(request.resource.data.nextDueAt)
+        && request.resource.data.active is bool
+        && (
+          !("notes" in request.resource.data)
+          || isString(request.resource.data.notes, 500)
+        )
+        && isMillis(request.resource.data.createdAt)
+        && isMillis(request.resource.data.updatedAt)
+        && (
+          isActorUid(request.resource.data.createdByUid)
+          || (
+            "createdByUid" in resource.data
+            && request.resource.data.createdByUid == resource.data.createdByUid
+          )
+        )
+        && (
+          !("lastPostedAt" in request.resource.data)
+          || isMillis(request.resource.data.lastPostedAt)
+        )
+        && hasValidExpenseFxMetadata();
+    }
+
+    function isExpenseCommentDoc(groupId, commentId) {
+      return request.resource.data.keys().hasOnly([
+          "id", "groupId", "expenseId", "body", "createdAt",
+          "createdByUid", "createdByName"
+        ])
+        && request.resource.data.keys().hasAll([
+          "id", "groupId", "expenseId", "body", "createdAt",
+          "createdByUid", "createdByName"
+        ])
+        && request.resource.data.id == commentId
+        && request.resource.data.groupId == groupId
+        && exists(/databases/$(database)/documents/groups/$(groupId)/expenses/$(request.resource.data.expenseId))
+        && isNonEmptyString(request.resource.data.body, 1000)
+        && isMillis(request.resource.data.createdAt)
+        && isActorUid(request.resource.data.createdByUid)
+        && isNonEmptyString(request.resource.data.createdByName, 80);
     }
 
     function isFriendDoc(friendId) {
@@ -382,7 +671,49 @@ service cloud.firestore {
         )
         && hasValidExpenseImportProvenance()
         && hasValidExpenseMetadata()
-        && !("mirroredFromPath" in request.resource.data);
+        && (
+          !("mirroredFromPath" in request.resource.data)
+          || isNonEmptyString(request.resource.data.mirroredFromPath, 500)
+        )
+        && (
+          !("mirroredFromUid" in request.resource.data)
+          || isNonEmptyString(request.resource.data.mirroredFromUid, 128)
+        )
+        && (
+          !("originalId" in request.resource.data)
+          || isNonEmptyString(request.resource.data.originalId, 160)
+        );
+    }
+
+    function isSourceAdHocExpenseWrite() {
+      return !("mirroredFromPath" in request.resource.data)
+        && !("mirroredFromUid" in request.resource.data)
+        && !("originalId" in request.resource.data);
+    }
+
+    function isAdHocMirrorMetadataUnchanged() {
+      return "mirroredFromPath" in resource.data
+        && request.resource.data.mirroredFromPath == resource.data.mirroredFromPath
+        && request.resource.data.mirroredFromUid == resource.data.mirroredFromUid
+        && request.resource.data.originalId == resource.data.originalId;
+    }
+
+    function canEditExistingAdHocExpense() {
+      return (
+          "createdByUid" in resource.data
+          && resource.data.createdByUid == request.auth.uid
+        )
+        || resource.data.paidByFriendId == "self";
+    }
+
+    function canDeleteExistingAdHocExpense() {
+      return !("mirroredFromPath" in resource.data)
+        || resource.data.paidByFriendId == "self";
+    }
+
+    function canDeleteExistingAdHocPayment() {
+      return !("mirroredFromPath" in resource.data)
+        || resource.data.fromFriendId == "self";
     }
 
     function isAdHocPaymentDoc(uid, paymentId) {
@@ -502,14 +833,26 @@ service cloud.firestore {
 
       match /adhocExpenses/{expenseId} {
         allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid) && isAdHocExpenseDoc(uid, expenseId);
-        allow delete: if isOwner(uid) && !("mirroredFromPath" in resource.data);
+        allow create: if isOwner(uid)
+          && isAdHocExpenseDoc(uid, expenseId)
+          && isSourceAdHocExpenseWrite();
+        allow update: if isOwner(uid)
+          && isAdHocExpenseDoc(uid, expenseId)
+          && canEditExistingAdHocExpense()
+          && (
+            (
+              !("mirroredFromPath" in resource.data)
+              && isSourceAdHocExpenseWrite()
+            )
+            || isAdHocMirrorMetadataUnchanged()
+          );
+        allow delete: if isOwner(uid) && canDeleteExistingAdHocExpense();
       }
 
       match /adhocPayments/{paymentId} {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) && isAdHocPaymentDoc(uid, paymentId);
-        allow delete: if isOwner(uid) && !("mirroredFromPath" in resource.data);
+        allow delete: if isOwner(uid) && canDeleteExistingAdHocPayment();
       }
 
       match /groupInvites/{inviteId} {
@@ -562,22 +905,66 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if groupMember(groupId);
         allow create: if isGroupMemberCreate(groupId, memberId);
-        allow update: if false;
+        allow update: if groupMember(groupId)
+          && isMemberDoc(groupId, memberId)
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.linkedUid == resource.data.linkedUid
+          && (
+            groupCreator(groupId)
+            || resource.data.linkedUid == request.auth.uid
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "preferredPaymentMethod", "paymentHandle", "paymentLink"
+          ]);
         allow delete: if groupCreator(groupId);
       }
 
       match /expenses/{expenseId} {
         allow read: if groupMember(groupId);
-        allow create, update: if groupMember(groupId)
+        allow create: if groupMember(groupId)
           && isExpenseDoc(groupId, expenseId);
-        allow delete: if groupMember(groupId);
+        allow update: if canEditExistingGroupRow(groupId, resource.data.paidById)
+          && isExpenseDoc(groupId, expenseId);
+        allow delete: if canDeleteExistingGroupRow(groupId, resource.data.paidById);
       }
 
       match /payments/{paymentId} {
         allow read: if groupMember(groupId);
-        allow create, update: if groupMember(groupId)
+        allow create: if groupMember(groupId)
           && isPaymentDoc(groupId, paymentId);
-        allow delete: if groupMember(groupId);
+        allow update: if canEditExistingGroupPayment(groupId)
+          && isPaymentDoc(groupId, paymentId);
+        allow delete: if canDeleteExistingGroupPayment(groupId);
+      }
+
+      match /settlementRequests/{requestId} {
+        allow read: if groupMember(groupId);
+        allow create: if groupMember(groupId)
+          && isSettlementRequestDoc(groupId, requestId);
+        allow update: if canEditExistingSettlementRequest(groupId)
+          && isSettlementRequestDoc(groupId, requestId);
+        allow delete: if canDeleteExistingSettlementRequest(groupId);
+      }
+
+      match /recurringExpenses/{recurringId} {
+        allow read: if groupMember(groupId);
+        allow create: if groupMember(groupId)
+          && isRecurringExpenseDoc(groupId, recurringId);
+        allow update: if canEditExistingGroupRow(groupId, resource.data.paidById)
+          && isRecurringExpenseDoc(groupId, recurringId);
+        allow delete: if canDeleteExistingGroupRow(groupId, resource.data.paidById);
+      }
+
+      match /expenseComments/{commentId} {
+        allow read: if groupMember(groupId);
+        allow create: if groupMember(groupId)
+          && isExpenseCommentDoc(groupId, commentId);
+        allow update: if false;
+        allow delete: if groupMember(groupId)
+          && resource.data.createdByUid == request.auth.uid;
       }
     }
   }

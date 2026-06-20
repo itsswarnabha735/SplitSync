@@ -922,6 +922,316 @@ export function AddAdHocExpenseDialog({
   );
 }
 
+export function EditAdHocExpenseDialog({
+  expense,
+  friends,
+  open,
+  onOpenChange,
+}: {
+  expense: AdHocExpense | null;
+  friends: Friend[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const repo = useRepository();
+  const runSyncing = useUiStore((s) => s.runSyncing);
+  const [selectedFriendId, setSelectedFriendId] = useState("");
+  const selectedFriend = useMemo(
+    () => friends.find((friend) => friend.id === selectedFriendId) ?? null,
+    [friends, selectedFriendId]
+  );
+  const participants = useMemo(
+    () => adHocParticipants(selectedFriend),
+    [selectedFriend]
+  );
+  const [description, setDescription] = useState("");
+  const [amountStr, setAmountStr] = useState("");
+  const [paidBy, setPaidBy] = useState<string>(YOU_ID);
+  const [currency, setCurrency] = useState("USD");
+  const [dateStr, setDateStr] = useState(() => toDateInputValue());
+  const [category, setCategory] = useState<ExpenseCategorySlug>("other");
+  const [splitType, setSplitType] = useState<DraftSplitMethod>("EQUAL");
+  const [split, setSplit] = useState<SplitState>(() =>
+    emptySplitState(participants)
+  );
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const amount = Number(amountStr) || 0;
+  const mirrorLocked = Boolean(expense?.mirroredFromPath);
+
+  useEffect(() => {
+    if (!expense || !open) return;
+    const counterpartyId = adHocCounterpartyId(expense);
+    const friend =
+      friends.find((candidate) => candidate.id === counterpartyId) ??
+      friends[0] ??
+      null;
+    const nextParticipants = adHocParticipants(friend);
+    setSelectedFriendId(friend?.id ?? "");
+    setDescription(expense.description);
+    setAmountStr(String(expense.amount));
+    setPaidBy(
+      expense.paidByFriendId === YOU_ID ||
+        expense.paidByFriendId === friend?.id
+        ? expense.paidByFriendId
+        : YOU_ID
+    );
+    setCurrency(expense.currency);
+    setDateStr(toDateInputValue(new Date(expense.timestamp)));
+      setCategory(expense.category ?? "other");
+      setSplitType(expense.splitType);
+      setSplit(splitStateFromAdHocExpense(nextParticipants, expense));
+      setNotes(expense.notes ?? "");
+      setDeleting(false);
+      setError(null);
+  }, [expense, friends, open]);
+
+  function handleFriendChange(friendId: string) {
+    const friend = friends.find((candidate) => candidate.id === friendId) ?? null;
+    const nextParticipants = adHocParticipants(friend);
+    setSelectedFriendId(friendId);
+    setPaidBy((current) =>
+      current === YOU_ID || current === friendId ? current : YOU_ID
+    );
+    setSplit(emptySplitState(nextParticipants));
+    setError(null);
+  }
+
+  async function handleSave() {
+    if (!repo || !expense) return;
+    if (!selectedFriend) {
+      setError("Choose a friend for this expense.");
+      return;
+    }
+    if (!description.trim()) {
+      setError("Description is required.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      setError("Amount must be greater than 0.");
+      return;
+    }
+    const result = buildSplitsForMethod({
+      splitMethod: splitType,
+      amount,
+      equalParticipantIds: participants
+        .filter((participant) => split.equalSelections[participant.id] ?? true)
+        .map((participant) => participant.id),
+      exactDistribution: parseSplitInputs(split.exactInputs),
+      shareDistribution: parseSplitInputs(split.shareInputs),
+      percentDistribution: parseSplitInputs(split.percentInputs),
+      adjustmentDistribution: parseSplitInputs(split.adjustmentInputs),
+      participantLabel: "participant",
+      currency,
+    });
+    if (!result.ok) {
+      setError(result.error ?? "Fix the split before saving.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await runSyncing(
+        () =>
+          repo.updateAdHocExpense(expense.id, {
+            description,
+            amount,
+            paidByFriendId: paidBy,
+            splitType: result.persistedSplitType,
+            splits: result.splits,
+            timestamp: dateInputToLocalTimestamp(dateStr) ?? expense.timestamp,
+            currency,
+            category,
+            notes,
+          }),
+        {
+          loading: "Updating expense...",
+          success: "Expense updated.",
+          error: "Could not update expense.",
+        }
+      );
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update expense.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!repo || !expense) return;
+    if (!window.confirm("Delete this expense? This cannot be undone.")) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await runSyncing(() => repo.deleteAdHocExpense(expense), {
+        loading: "Deleting expense...",
+        success: "Expense deleted.",
+        error: "Could not delete expense.",
+      });
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete expense.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edit expense</DialogTitle>
+        </DialogHeader>
+        {expense && (
+          <div className="space-y-4">
+            {error && (
+              <p
+                className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="edit-adhoc-description">Description</Label>
+                <Input
+                  id="edit-adhoc-description"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-amount">Amount</Label>
+                <Input
+                  id="edit-adhoc-amount"
+                  inputMode="decimal"
+                  value={amountStr}
+                  onChange={(event) => setAmountStr(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-currency">Currency</Label>
+                <NativeSelect
+                  id="edit-adhoc-currency"
+                  value={currency}
+                  onChange={(event) => setCurrency(event.target.value)}
+                >
+                  {SUPPORTED_CURRENCIES.map((item) => (
+                    <option key={item.code} value={item.code}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-date">Date</Label>
+                <Input
+                  id="edit-adhoc-date"
+                  type="date"
+                  value={dateStr}
+                  onChange={(event) => setDateStr(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-category">Category</Label>
+                <NativeSelect
+                  id="edit-adhoc-category"
+                  value={category}
+                  onChange={(event) =>
+                    setCategory(event.target.value as ExpenseCategorySlug)
+                  }
+                >
+                  {EXPENSE_CATEGORIES.map((item) => (
+                    <option key={item.slug} value={item.slug}>
+                      {item.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-friend">Friend</Label>
+                <NativeSelect
+                  id="edit-adhoc-friend"
+                  value={selectedFriend?.id ?? ""}
+                  onChange={(event) => handleFriendChange(event.target.value)}
+                  disabled={mirrorLocked}
+                >
+                  {friends.map((friend) => (
+                    <option key={friend.id} value={friend.id}>
+                      {friend.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-adhoc-paid-by">Paid by</Label>
+                <NativeSelect
+                  id="edit-adhoc-paid-by"
+                  value={paidBy}
+                  onChange={(event) => setPaidBy(event.target.value)}
+                >
+                  {participants.map((participant) => (
+                    <option key={participant.id} value={participant.id}>
+                      {participant.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="edit-adhoc-notes">Notes</Label>
+                <textarea
+                  id="edit-adhoc-notes"
+                  className="min-h-20 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Add context for future reviewers"
+                />
+              </div>
+            </div>
+
+            <SplitTypeToggle value={splitType} advanced onChange={setSplitType} />
+            <SplitEditor
+              participants={participants}
+              amount={amount}
+              currency={currency}
+              splitType={splitType}
+              value={split}
+              onChange={setSplit}
+            />
+          </div>
+        )}
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+          <Button
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={handleDelete}
+            disabled={saving || deleting || !expense}
+          >
+            {deleting ? "Deleting..." : "Delete expense"}
+          </Button>
+          <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={saving || deleting}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving || deleting}>
+            {saving ? "Saving..." : "Save changes"}
+          </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function friendIdFromAutocomplete(
   result: AppliedExpenseAutocomplete,
   fallbackFriendId: string
@@ -933,6 +1243,43 @@ function friendIdFromAutocomplete(
   ].filter((id): id is string => Boolean(id && id !== YOU_ID));
 
   return candidates[0] ?? fallbackFriendId;
+}
+
+function adHocParticipants(friend: Friend | null): Participant[] {
+  return friend
+    ? [
+        { id: YOU_ID, name: "You" },
+        { id: friend.id, name: friend.name },
+      ]
+    : [{ id: YOU_ID, name: "You" }];
+}
+
+function adHocCounterpartyId(expense: AdHocExpense): string {
+  if (expense.paidByFriendId !== YOU_ID) return expense.paidByFriendId;
+  return Object.keys(expense.splits).find((participantId) => participantId !== YOU_ID) ?? "";
+}
+
+function splitStateFromAdHocExpense(
+  participants: Participant[],
+  expense: AdHocExpense
+): SplitState {
+  return {
+    equalSelections: Object.fromEntries(
+      participants.map((participant) => [
+        participant.id,
+        (expense.splits[participant.id] ?? 0) > 0,
+      ])
+    ),
+    exactInputs: Object.fromEntries(
+      Object.entries(expense.splits).map(([participantId, value]) => [
+        participantId,
+        value.toFixed(2),
+      ])
+    ),
+    shareInputs: {},
+    percentInputs: {},
+    adjustmentInputs: {},
+  };
 }
 
 export function SplitTypeToggle({

@@ -8,14 +8,22 @@ import {
   AdHocExpense,
   AdHocPayment,
   Expense,
+  ExpenseComment,
+  ExpenseDisputeStatus,
   Friend,
   Group,
+  GroupTemplate,
   GroupInvite,
   GroupMember,
   Notification,
   NotificationPreference,
   NotificationType,
+  PaymentMethod,
   Payment,
+  RecurringExpense,
+  RecurringFrequency,
+  SettlementRequest,
+  SettlementRequestStatus,
   ExpenseSourceType,
   StatementParserMode,
   SplitType,
@@ -58,6 +66,52 @@ function sourceType(v: unknown): ExpenseSourceType | undefined {
 }
 function parserMode(v: unknown): StatementParserMode | undefined {
   return v === "ai-assisted" || v === "local-only" ? v : undefined;
+}
+function groupTemplate(v: unknown): GroupTemplate {
+  const known: GroupTemplate[] = [
+    "custom",
+    "trip",
+    "flatmates",
+    "couple",
+    "office",
+    "event",
+  ];
+  return typeof v === "string" && known.includes(v as GroupTemplate)
+    ? (v as GroupTemplate)
+    : "custom";
+}
+function paymentMethod(v: unknown): PaymentMethod | undefined {
+  const known: PaymentMethod[] = ["upi", "bank", "cash", "other"];
+  return typeof v === "string" && known.includes(v as PaymentMethod)
+    ? (v as PaymentMethod)
+    : undefined;
+}
+function recurringFrequency(v: unknown): RecurringFrequency {
+  const known: RecurringFrequency[] = ["weekly", "monthly", "quarterly", "yearly"];
+  return typeof v === "string" && known.includes(v as RecurringFrequency)
+    ? (v as RecurringFrequency)
+    : "monthly";
+}
+function expenseDisputeStatus(v: unknown): ExpenseDisputeStatus {
+  const known: ExpenseDisputeStatus[] = [
+    "none",
+    "needs_clarification",
+    "resolved",
+  ];
+  return typeof v === "string" && known.includes(v as ExpenseDisputeStatus)
+    ? (v as ExpenseDisputeStatus)
+    : "none";
+}
+function settlementRequestStatus(v: unknown): SettlementRequestStatus {
+  const known: SettlementRequestStatus[] = [
+    "requested",
+    "reminded",
+    "dismissed",
+    "settled",
+  ];
+  return typeof v === "string" && known.includes(v as SettlementRequestStatus)
+    ? (v as SettlementRequestStatus)
+    : "requested";
 }
 function notificationType(v: unknown): NotificationType {
   const known: NotificationType[] = [
@@ -122,6 +176,16 @@ export function toGroup(d: AnySnap): Group {
     memberUids: Array.isArray(data.memberUids)
       ? (data.memberUids.filter((x) => typeof x === "string") as string[])
       : [],
+    status: data.status === "archived" ? "archived" : "active",
+    archivedAt: typeof data.archivedAt === "number" ? data.archivedAt : undefined,
+    archivedByUid: str(data.archivedByUid) || undefined,
+    template: groupTemplate(data.template),
+    defaultCurrency: str(data.defaultCurrency, "USD"),
+    settlementCurrency: str(
+      data.settlementCurrency,
+      str(data.defaultCurrency, "USD")
+    ),
+    travelMode: data.travelMode === true,
   };
 }
 
@@ -133,6 +197,9 @@ export function toMember(d: AnySnap): GroupMember {
     name: str(data.name),
     email: str(data.email),
     linkedUid: str(data.linkedUid),
+    preferredPaymentMethod: paymentMethod(data.preferredPaymentMethod),
+    paymentHandle: str(data.paymentHandle) || undefined,
+    paymentLink: str(data.paymentLink) || undefined,
   };
 }
 
@@ -164,6 +231,16 @@ export function toExpense(d: AnySnap): Expense {
     updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
     lastEditedByUid: str(data.lastEditedByUid) || undefined,
     editCount: typeof data.editCount === "number" ? data.editCount : undefined,
+    originalAmount:
+      typeof data.originalAmount === "number" ? data.originalAmount : undefined,
+    originalCurrency: str(data.originalCurrency) || undefined,
+    exchangeRate:
+      typeof data.exchangeRate === "number" ? data.exchangeRate : undefined,
+    fxNote: str(data.fxNote) || undefined,
+    disputeStatus: expenseDisputeStatus(data.disputeStatus),
+    disputedByUid: str(data.disputedByUid) || undefined,
+    disputedAt: typeof data.disputedAt === "number" ? data.disputedAt : undefined,
+    disputeNote: str(data.disputeNote) || undefined,
   };
 }
 
@@ -178,6 +255,72 @@ export function toPayment(d: AnySnap): Payment {
     timestamp: num(data.timestamp),
     currency: str(data.currency, "USD"),
     createdByUid: str(data.createdByUid) || undefined,
+    updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
+    lastEditedByUid: str(data.lastEditedByUid) || undefined,
+    editCount: typeof data.editCount === "number" ? data.editCount : undefined,
+  };
+}
+
+export function toSettlementRequest(d: AnySnap): SettlementRequest {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    groupId: str(data.groupId),
+    fromMemberId: str(data.fromMemberId),
+    toMemberId: str(data.toMemberId),
+    amount: num(data.amount),
+    currency: str(data.currency, "USD"),
+    message: str(data.message),
+    status: settlementRequestStatus(data.status),
+    createdAt: num(data.createdAt),
+    updatedAt: num(data.updatedAt),
+    requestedByUid: str(data.requestedByUid),
+    lastRemindedAt:
+      typeof data.lastRemindedAt === "number" ? data.lastRemindedAt : undefined,
+    remindAfter: typeof data.remindAfter === "number" ? data.remindAfter : undefined,
+  };
+}
+
+export function toExpenseComment(d: AnySnap): ExpenseComment {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    groupId: str(data.groupId),
+    expenseId: str(data.expenseId),
+    body: str(data.body),
+    createdAt: num(data.createdAt),
+    createdByUid: str(data.createdByUid),
+    createdByName: str(data.createdByName),
+  };
+}
+
+export function toRecurringExpense(d: AnySnap): RecurringExpense {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    groupId: str(data.groupId),
+    description: str(data.description),
+    amount: num(data.amount),
+    paidById: str(data.paidById),
+    splitType: splitType(data.splitType),
+    currency: str(data.currency, "USD"),
+    splits: splitMap(data.splits),
+    category: category(data.category),
+    frequency: recurringFrequency(data.frequency),
+    nextDueAt: num(data.nextDueAt),
+    active: data.active !== false,
+    notes: str(data.notes) || undefined,
+    createdAt: num(data.createdAt),
+    updatedAt: num(data.updatedAt),
+    createdByUid: str(data.createdByUid),
+    lastPostedAt:
+      typeof data.lastPostedAt === "number" ? data.lastPostedAt : undefined,
+    originalAmount:
+      typeof data.originalAmount === "number" ? data.originalAmount : undefined,
+    originalCurrency: str(data.originalCurrency) || undefined,
+    exchangeRate:
+      typeof data.exchangeRate === "number" ? data.exchangeRate : undefined,
+    fxNote: str(data.fxNote) || undefined,
   };
 }
 

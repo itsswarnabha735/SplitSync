@@ -4,6 +4,7 @@ const admin = require("firebase-admin");
 const {
   onDocumentCreatedWithAuthContext,
   onDocumentDeletedWithAuthContext,
+  onDocumentUpdatedWithAuthContext,
 } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const {
@@ -13,6 +14,10 @@ const {
   largeExpenseTags,
   actorName,
   buildGroupExpenseNotification,
+  buildMirroredAdHocExpense,
+  buildSourceAdHocExpenseFromMirror,
+  shouldHandleSourceAdHocDelete,
+  sourcePathForAdHocMirrorDelete,
 } = require("./notification-core");
 
 admin.initializeApp();
@@ -79,6 +84,63 @@ function numberMapsEqual(a = {}, b = {}) {
     aKeys.length === bKeys.length &&
     aKeys.every((key) => a[key] === b[key])
   );
+}
+
+const ADHOC_EXPENSE_SYNC_FIELDS = [
+  "id",
+  "description",
+  "amount",
+  "paidByFriendId",
+  "splitType",
+  "timestamp",
+  "currency",
+  "splits",
+  "createdByUid",
+  "category",
+  "sourceType",
+  "importBatchId",
+  "transactionFingerprint",
+  "parserMode",
+  "parserConfidence",
+  "notes",
+  "sourceConfidence",
+  "sourceWarnings",
+  "createdAt",
+  "updatedAt",
+  "lastEditedByUid",
+  "editCount",
+  "mirroredFromPath",
+  "mirroredFromUid",
+  "originalId",
+];
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function comparableAdHocExpense(data = {}) {
+  return ADHOC_EXPENSE_SYNC_FIELDS.reduce((out, field) => {
+    if (data[field] !== undefined) out[field] = data[field];
+    return out;
+  }, {});
+}
+
+function adHocExpensesEqual(a = {}, b = {}) {
+  return stableJson(comparableAdHocExpense(a)) === stableJson(comparableAdHocExpense(b));
+}
+
+async function writeAdHocExpenseIfChanged(ref, next) {
+  const snap = await ref.get();
+  if (snap.exists && adHocExpensesEqual(dataOf(snap), next)) return false;
+  await ref.set(next);
+  return true;
 }
 
 async function commitAdminActions(actions) {
@@ -392,15 +454,16 @@ function mirroredSplits(splits, friendId, ownerUid) {
 async function mirrorAdHocExpense(ownerUid, expenseId, expense, friend) {
   await ensureFriendDoc(friend.linkedUid, ownerUid);
   const mirrorId = `${ownerUid}_${expenseId}`;
-  await db.doc(`users/${friend.linkedUid}/adhocExpenses/${mirrorId}`).set({
-    ...expense,
-    id: mirrorId,
-    paidByFriendId: mirroredParticipant(expense.paidByFriendId, friend.id, ownerUid),
-    splits: mirroredSplits(expense.splits, friend.id, ownerUid),
-    mirroredFromPath: `users/${ownerUid}/adhocExpenses/${expenseId}`,
-    mirroredFromUid: ownerUid,
-    originalId: expenseId,
-  });
+  const mirrorRef = db.doc(`users/${friend.linkedUid}/adhocExpenses/${mirrorId}`);
+  await writeAdHocExpenseIfChanged(
+    mirrorRef,
+    buildMirroredAdHocExpense(expense, {
+      mirrorId,
+      sourceOwnerUid: ownerUid,
+      sourceExpenseId: expenseId,
+      sourceFriendId: friend.id,
+    })
+  );
 }
 
 async function mirrorAdHocPayment(ownerUid, paymentId, payment, friend) {
@@ -415,6 +478,53 @@ async function mirrorAdHocPayment(ownerUid, paymentId, payment, friend) {
     mirroredFromUid: ownerUid,
     originalId: paymentId,
   });
+}
+
+async function syncSourceAdHocExpenseUpdate(ownerUid, expenseId, before, after) {
+  const beforeFriend = await linkedCounterparty(ownerUid, counterpartyFromExpense(before));
+  const afterFriend = await linkedCounterparty(ownerUid, counterpartyFromExpense(after));
+
+  if (
+    beforeFriend &&
+    (!afterFriend || beforeFriend.linkedUid !== afterFriend.linkedUid)
+  ) {
+    await db
+      .doc(`users/${beforeFriend.linkedUid}/adhocExpenses/${ownerUid}_${expenseId}`)
+      .delete();
+  }
+
+  if (afterFriend) {
+    await mirrorAdHocExpense(ownerUid, expenseId, after, afterFriend);
+  }
+}
+
+async function syncMirrorAdHocExpenseUpdate(mirrorExpense) {
+  if (!mirrorExpense.mirroredFromPath || !mirrorExpense.mirroredFromUid) return;
+  const sourceRef = db.doc(mirrorExpense.mirroredFromPath);
+  const sourceSnap = await sourceRef.get();
+  if (!sourceSnap.exists) return;
+
+  const sourceExpense = dataOf(sourceSnap);
+  const sourceOwnerUid = mirrorExpense.mirroredFromUid;
+  const sourceExpenseId = mirrorExpense.originalId || sourceRef.id;
+  const sourceFriendId = counterpartyFromExpense(sourceExpense);
+  if (!sourceFriendId) return;
+
+  await writeAdHocExpenseIfChanged(
+    sourceRef,
+    buildSourceAdHocExpenseFromMirror(mirrorExpense, {
+      sourceOwnerUid,
+      sourceExpenseId,
+      sourceFriendId,
+    })
+  );
+}
+
+async function deleteSourceForAdHocMirror(mirrorDoc, collectionName) {
+  const sourcePath = sourcePathForAdHocMirrorDelete(mirrorDoc, collectionName);
+  if (!sourcePath) return false;
+  await db.doc(sourcePath).delete();
+  return true;
 }
 
 exports.onGroupInviteCreated = onDocumentCreatedWithAuthContext(
@@ -667,11 +777,35 @@ exports.onAdHocExpenseCreated = onDocumentCreatedWithAuthContext(
   }
 );
 
+exports.onAdHocExpenseUpdated = onDocumentUpdatedWithAuthContext(
+  "users/{uid}/adhocExpenses/{expenseId}",
+  async (event) => {
+    const before = dataOf(event.data?.before);
+    const after = dataOf(event.data?.after);
+    if (!after.id) after.id = event.params.expenseId;
+
+    if (after.mirroredFromPath) {
+      await syncMirrorAdHocExpenseUpdate(after);
+      return;
+    }
+
+    await syncSourceAdHocExpenseUpdate(
+      event.params.uid,
+      event.params.expenseId,
+      before,
+      after
+    );
+  }
+);
+
 exports.onAdHocExpenseDeleted = onDocumentDeletedWithAuthContext(
   "users/{uid}/adhocExpenses/{expenseId}",
   async (event) => {
     const expense = dataOf(event.data);
-    if (expense.mirroredFromPath) return;
+    if (!shouldHandleSourceAdHocDelete(expense)) {
+      await deleteSourceForAdHocMirror(expense, "adhocExpenses");
+      return;
+    }
     const ownerUid = event.params.uid;
     const actor = actorUid(event, expense) || ownerUid;
     const friendId = counterpartyFromExpense(expense);
@@ -741,7 +875,10 @@ exports.onAdHocPaymentDeleted = onDocumentDeletedWithAuthContext(
   "users/{uid}/adhocPayments/{paymentId}",
   async (event) => {
     const payment = dataOf(event.data);
-    if (payment.mirroredFromPath) return;
+    if (!shouldHandleSourceAdHocDelete(payment)) {
+      await deleteSourceForAdHocMirror(payment, "adhocPayments");
+      return;
+    }
     const ownerUid = event.params.uid;
     const actor = actorUid(event, payment) || ownerUid;
     const friendId = counterpartyFromPayment(payment);

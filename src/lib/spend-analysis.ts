@@ -3,6 +3,12 @@ import {
   isSpendCategorySlug,
   type ExpenseCategorySlug,
 } from "@/lib/expense-categories";
+import {
+  canDeleteAdHocExpense,
+  canDeleteGroupExpense,
+  canEditAdHocExpense,
+  canEditGroupExpense,
+} from "@/lib/edit-permissions";
 import type { AdHocExpense, Expense, Friend, Group, GroupMember, Payment } from "@/lib/models";
 import { YOU_ID as SELF_ID } from "@/lib/models";
 
@@ -14,6 +20,10 @@ export interface SpendGroupSlice {
 
 export type SpendEntrySource = "group" | "friend";
 export type SpendEntryOrigin = "manual" | "imported";
+export type SpendEditableTarget =
+  | { kind: "groupExpense"; groupId: string; expenseId: string }
+  | { kind: "adHocExpense"; expenseId: string };
+export type SpendDeletableTarget = SpendEditableTarget;
 
 export interface SpendEntry {
   id: string;
@@ -33,6 +43,8 @@ export interface SpendEntry {
   origin: SpendEntryOrigin;
   parserConfidence?: number;
   needsReview: boolean;
+  editableTarget?: SpendEditableTarget;
+  deletableTarget?: SpendDeletableTarget;
 }
 
 export interface SpendFilters {
@@ -88,6 +100,27 @@ export function deriveSpendEntries(params: {
         const myShare = expense.splits[you.id] ?? 0;
         const paidByMe = expense.paidById === you.id;
         if (myShare <= 0 && !paidByMe) continue;
+        const editable =
+          group &&
+          canEditGroupExpense({
+            group,
+            members: slice.members,
+            expense,
+            uid,
+          });
+        const deletable =
+          group &&
+          canDeleteGroupExpense({
+            group,
+            members: slice.members,
+            expense,
+            uid,
+          });
+        const target = {
+          kind: "groupExpense" as const,
+          groupId: expense.groupId,
+          expenseId: expense.id,
+        };
         entries.push(
           buildSpendEntry({
             id: `group:${expense.groupId}:${expense.id}`,
@@ -104,6 +137,8 @@ export function deriveSpendEntries(params: {
             paidByMe,
             origin: expense.sourceType === "statement-import" ? "imported" : "manual",
             parserConfidence: expense.parserConfidence,
+            editableTarget: editable ? target : undefined,
+            deletableTarget: deletable ? target : undefined,
           })
         );
       }
@@ -119,6 +154,9 @@ export function deriveSpendEntries(params: {
     const friend = friendById.get(counterpartyId);
     const myShare = expense.splits[SELF_ID] ?? 0;
     if (myShare <= 0 && !paidByMe) continue;
+    const editable = canEditAdHocExpense(expense, uid);
+    const deletable = canDeleteAdHocExpense(expense, uid);
+    const target = { kind: "adHocExpense" as const, expenseId: expense.id };
     entries.push(
       buildSpendEntry({
         id: `friend:${expense.id}`,
@@ -135,6 +173,8 @@ export function deriveSpendEntries(params: {
         paidByMe,
         origin: expense.sourceType === "statement-import" ? "imported" : "manual",
         parserConfidence: expense.parserConfidence,
+        editableTarget: editable ? target : undefined,
+        deletableTarget: deletable ? target : undefined,
       })
     );
   }
@@ -223,6 +263,8 @@ function buildSpendEntry(params: {
   paidByMe: boolean;
   origin: SpendEntryOrigin;
   parserConfidence?: number;
+  editableTarget?: SpendEditableTarget;
+  deletableTarget?: SpendDeletableTarget;
 }): SpendEntry {
   const category = params.category ?? "other";
   const categoryInfo = getExpenseCategory(category);

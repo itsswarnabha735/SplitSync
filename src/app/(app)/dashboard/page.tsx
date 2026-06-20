@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LogOut, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
@@ -11,24 +12,43 @@ import { useDashboardBalances } from "@/hooks/use-dashboard-balances";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import { signOut } from "@/services/auth";
-import { deriveSpendEntries } from "@/lib/spend-analysis";
+import type { AdHocExpense } from "@/lib/models";
+import { formatMoney } from "@/lib/currency";
+import { deriveSpendEntries, type SpendEntry } from "@/lib/spend-analysis";
 import { AppHeader } from "@/components/app-header";
 import { CurrencyTotals } from "@/components/currency-totals";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupsTab } from "@/components/dashboard/groups-tab";
 import { FriendsTab } from "@/components/dashboard/friends-tab";
 import { SpendTab } from "@/components/dashboard/spend-tab";
+import { ReviewCenter } from "@/components/dashboard/review-center";
+import { EditAdHocExpenseDialog } from "@/components/dialogs/add-adhoc-expense-dialog";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, displayName } = useAuth();
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
   const [pendingInviteAction, setPendingInviteAction] = useState<string | null>(
     null
   );
+  const [activeTab, setActiveTab] = useState("groups");
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [editingAdHocExpense, setEditingAdHocExpense] =
+    useState<AdHocExpense | null>(null);
+  const [pendingDeleteEntry, setPendingDeleteEntry] =
+    useState<SpendEntry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState(false);
+  const [deleteEntryError, setDeleteEntryError] = useState<string | null>(null);
 
   const { groups } = useGroups();
   const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
@@ -81,6 +101,57 @@ export default function DashboardPage() {
       );
     } finally {
       setPendingInviteAction(null);
+    }
+  }
+
+  function handleEditSpendEntry(entry: SpendEntry) {
+    const target = entry.editableTarget;
+    if (!target) return;
+    if (target.kind === "groupExpense") {
+      router.push(`/groups/${target.groupId}`);
+      return;
+    }
+    const expense = adHocExpenses.find((item) => item.id === target.expenseId);
+    if (expense) {
+      setEditingAdHocExpense(expense);
+    } else {
+      setActiveTab("friends");
+    }
+  }
+
+  async function confirmDeleteSpendEntry() {
+    const target = pendingDeleteEntry?.deletableTarget;
+    if (!repo || !pendingDeleteEntry || !target) return;
+    const entry = pendingDeleteEntry;
+    setDeletingEntry(true);
+    setDeleteEntryError(null);
+    try {
+      await runSyncing(
+        () => {
+          if (target.kind === "groupExpense") {
+            const expense = groupSlices[target.groupId]?.expenses.find(
+              (item) => item.id === target.expenseId
+            );
+            if (!expense) throw new Error("Could not find this group expense.");
+            return repo.deleteExpense(expense);
+          }
+          const expense = adHocExpenses.find((item) => item.id === target.expenseId);
+          if (!expense) throw new Error("Could not find this friend expense.");
+          return repo.deleteAdHocExpense(expense);
+        },
+        {
+          loading: "Deleting transaction...",
+          success: "Transaction deleted.",
+          error: "Could not delete transaction.",
+        }
+      );
+      setPendingDeleteEntry(null);
+    } catch (err) {
+      setDeleteEntryError(
+        err instanceof Error ? err.message : "Could not delete this transaction."
+      );
+    } finally {
+      setDeletingEntry(false);
     }
   }
 
@@ -150,6 +221,15 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        <ReviewCenter
+          entries={spendEntries}
+          outstandingNet={net}
+          onOpenSpend={() => setActiveTab("spend")}
+          onOpenBalances={() => setActiveTab("groups")}
+          onEditEntry={handleEditSpendEntry}
+          onDeleteEntry={setPendingDeleteEntry}
+        />
+
         {/* Pending invites */}
         {invites.length > 0 && (
           <div className="space-y-2">
@@ -200,7 +280,7 @@ export default function DashboardPage() {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="groups">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid h-12 w-full grid-cols-3 rounded-xl sm:h-11 sm:rounded-2xl">
             <TabsTrigger value="groups" className="rounded-lg sm:rounded-xl">
               Groups
@@ -227,9 +307,84 @@ export default function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="spend">
-            <SpendTab entries={spendEntries} outstandingNet={net} />
+            <SpendTab
+              entries={spendEntries}
+              outstandingNet={net}
+              onEditEntry={handleEditSpendEntry}
+              onDeleteEntry={setPendingDeleteEntry}
+            />
           </TabsContent>
         </Tabs>
+        <Dialog
+          open={!!pendingDeleteEntry}
+          onOpenChange={(open) => {
+            if (deletingEntry) return;
+            if (!open) {
+              setPendingDeleteEntry(null);
+              setDeleteEntryError(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete transaction?</DialogTitle>
+            </DialogHeader>
+            {pendingDeleteEntry && (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3">
+                  <p className="font-black">{pendingDeleteEntry.scopeName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {pendingDeleteEntry.categoryName} ·{" "}
+                    {formatMoney(
+                      pendingDeleteEntry.fullAmount,
+                      pendingDeleteEntry.currency
+                    )}
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This removes the transaction from the ledger and recalculates
+                  balances. This cannot be undone.
+                </p>
+                {deleteEntryError && (
+                  <p
+                    className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+                    role="alert"
+                  >
+                    {deleteEntryError}
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setPendingDeleteEntry(null);
+                  setDeleteEntryError(null);
+                }}
+                disabled={deletingEntry}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={confirmDeleteSpendEntry}
+                disabled={deletingEntry}
+              >
+                {deletingEntry ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <EditAdHocExpenseDialog
+          expense={editingAdHocExpense}
+          friends={friends}
+          open={!!editingAdHocExpense}
+          onOpenChange={(open) => {
+            if (!open) setEditingAdHocExpense(null);
+          }}
+        />
       </main>
     </div>
   );

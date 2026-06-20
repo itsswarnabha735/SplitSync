@@ -4,6 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, UserRound, UserPlus } from "lucide-react";
 
+import type { GroupTemplate } from "@/lib/models";
+import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import {
+  GROUP_TEMPLATE_OPTIONS,
+  groupTemplateOption,
+} from "@/lib/group-templates";
 import { useAuth } from "@/hooks/use-auth";
 import { useFriends } from "@/hooks/use-friends";
 import { useRepository } from "@/hooks/use-repository";
@@ -25,6 +31,10 @@ export default function CreateGroupPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [template, setTemplate] = useState<GroupTemplate>("custom");
+  const [defaultCurrency, setDefaultCurrency] = useState("USD");
+  const [settlementCurrency, setSettlementCurrency] = useState("USD");
+  const [travelMode, setTravelMode] = useState(false);
   // Selectable friend slots (by friend id). The creator is implicit.
   const [memberIds, setMemberIds] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +43,15 @@ export default function CreateGroupPage() {
 
   function setMemberAt(index: number, value: string) {
     setMemberIds((prev) => prev.map((m, i) => (i === index ? value : m)));
+    setError(null);
+  }
+
+  function applyTemplate(nextTemplate: GroupTemplate) {
+    const preset = groupTemplateOption(nextTemplate);
+    setTemplate(nextTemplate);
+    setDefaultCurrency(preset.defaultCurrency);
+    setSettlementCurrency(preset.settlementCurrency);
+    setTravelMode(preset.travelMode);
     setError(null);
   }
 
@@ -61,6 +80,11 @@ export default function CreateGroupPage() {
           repo.createGroupWithMembers(name, description, newMembers, {
             name: displayName,
             email: user?.email ?? "",
+          }, {
+            template,
+            defaultCurrency,
+            settlementCurrency,
+            travelMode,
           }),
         {
           loading: "Creating group...",
@@ -114,6 +138,77 @@ export default function CreateGroupPage() {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What's this group for?"
             />
+          </div>
+        </Card>
+
+        <Card className="space-y-4 border-primary/10 p-5">
+          <p className="text-xs font-black uppercase tracking-wide text-primary">
+            Template and currency
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {GROUP_TEMPLATE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
+                  template === option.value
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border/70 bg-card hover:bg-accent"
+                }`}
+                onClick={() => applyTemplate(option.value)}
+              >
+                <span className="block font-black">{option.label}</span>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                  {option.description}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="group-default-currency">Default currency</Label>
+              <NativeSelect
+                id="group-default-currency"
+                value={defaultCurrency}
+                onChange={(event) => setDefaultCurrency(event.target.value)}
+              >
+                {SUPPORTED_CURRENCIES.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="group-settlement-currency">
+                Settlement currency
+              </Label>
+              <NativeSelect
+                id="group-settlement-currency"
+                value={settlementCurrency}
+                onChange={(event) => setSettlementCurrency(event.target.value)}
+              >
+                {SUPPORTED_CURRENCIES.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <label className="flex items-center gap-3 rounded-2xl border border-primary/10 px-3 py-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                checked={travelMode}
+                onChange={(event) => setTravelMode(event.target.checked)}
+              />
+              <span>
+                <span className="block text-sm font-bold">Travel mode</span>
+                <span className="block text-xs text-muted-foreground">
+                  Track original currency and FX rate.
+                </span>
+              </span>
+            </label>
           </div>
         </Card>
 

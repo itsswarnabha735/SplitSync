@@ -68,6 +68,87 @@ function buildGroupExpenseNotification({
   };
 }
 
+function mirrorAdHocParticipant(participantId, sourceFriendId, sourceOwnerUid) {
+  if (participantId === sourceFriendId) return "self";
+  if (participantId === "self") return sourceOwnerUid;
+  return participantId;
+}
+
+function sourceAdHocParticipant(participantId, sourceFriendId, sourceOwnerUid) {
+  if (participantId === "self") return sourceFriendId;
+  if (participantId === sourceOwnerUid) return "self";
+  return participantId;
+}
+
+function mapAdHocSplits(splits, mapParticipant) {
+  return Object.entries(splits || {}).reduce((out, [participantId, amount]) => {
+    const mappedId = mapParticipant(participantId);
+    out[mappedId] = (out[mappedId] || 0) + (amount || 0);
+    return out;
+  }, {});
+}
+
+function buildMirroredAdHocExpense(expense, options) {
+  const { mirrorId, sourceOwnerUid, sourceExpenseId, sourceFriendId } = options;
+  return {
+    ...expense,
+    id: mirrorId,
+    paidByFriendId: mirrorAdHocParticipant(
+      expense.paidByFriendId,
+      sourceFriendId,
+      sourceOwnerUid
+    ),
+    splits: mapAdHocSplits(expense.splits, (participantId) =>
+      mirrorAdHocParticipant(participantId, sourceFriendId, sourceOwnerUid)
+    ),
+    mirroredFromPath: `users/${sourceOwnerUid}/adhocExpenses/${sourceExpenseId}`,
+    mirroredFromUid: sourceOwnerUid,
+    originalId: sourceExpenseId,
+  };
+}
+
+function buildSourceAdHocExpenseFromMirror(mirrorExpense, options) {
+  const { sourceExpenseId, sourceOwnerUid, sourceFriendId } = options;
+  const {
+    mirroredFromPath,
+    mirroredFromUid,
+    originalId,
+    ...source
+  } = mirrorExpense;
+  return {
+    ...source,
+    id: sourceExpenseId,
+    paidByFriendId: sourceAdHocParticipant(
+      mirrorExpense.paidByFriendId,
+      sourceFriendId,
+      sourceOwnerUid
+    ),
+    splits: mapAdHocSplits(mirrorExpense.splits, (participantId) =>
+      sourceAdHocParticipant(participantId, sourceFriendId, sourceOwnerUid)
+    ),
+  };
+}
+
+function sourcePathForAdHocMirrorDelete(mirrorDoc, collectionName) {
+  if (!mirrorDoc?.mirroredFromPath || !collectionName) return "";
+  const match = mirrorDoc.mirroredFromPath.match(
+    new RegExp(`^users/([^/]+)/${collectionName}/([^/]+)$`)
+  );
+  if (!match) return "";
+  const [, sourceOwnerUid, sourceDocId] = match;
+  if (mirrorDoc.mirroredFromUid && mirrorDoc.mirroredFromUid !== sourceOwnerUid) {
+    return "";
+  }
+  if (mirrorDoc.originalId && mirrorDoc.originalId !== sourceDocId) {
+    return "";
+  }
+  return mirrorDoc.mirroredFromPath;
+}
+
+function shouldHandleSourceAdHocDelete(doc) {
+  return !doc?.mirroredFromPath;
+}
+
 module.exports = {
   EVENT_TYPES,
   notificationDocId,
@@ -76,4 +157,10 @@ module.exports = {
   largeExpenseTags,
   actorName,
   buildGroupExpenseNotification,
+  mirrorAdHocParticipant,
+  sourceAdHocParticipant,
+  buildMirroredAdHocExpense,
+  buildSourceAdHocExpenseFromMirror,
+  sourcePathForAdHocMirrorDelete,
+  shouldHandleSourceAdHocDelete,
 };

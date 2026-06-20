@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarDays, Receipt } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  CalendarDays,
+  Download,
+  Printer,
+  Receipt,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 
 import {
   EXPENSE_CATEGORIES,
@@ -25,6 +34,7 @@ import { CurrencyTotals } from "@/components/currency-totals";
 import { EmptyState } from "@/components/empty-state";
 import { SettlementCopilotButton } from "@/components/settlement-copilot";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,9 +43,16 @@ import { NativeSelect } from "@/components/ui/native-select";
 interface SpendTabProps {
   entries: SpendEntry[];
   outstandingNet: Record<string, number>;
+  onEditEntry?: (entry: SpendEntry) => void;
+  onDeleteEntry?: (entry: SpendEntry) => void;
 }
 
-export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
+export function SpendTab({
+  entries,
+  outstandingNet,
+  onEditEntry,
+  onDeleteEntry,
+}: SpendTabProps) {
   const [filters, setFilters] = useState<SpendFilters>({
     category: "all",
     source: "all",
@@ -70,6 +87,7 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
     () => [...filtered].sort((a, b) => b.myShare - a.myShare).slice(0, 6),
     [filtered]
   );
+  const insightRows = useMemo(() => buildSpendInsights(filtered), [filtered]);
   const reviewRows = useMemo(
     () =>
       entries
@@ -95,6 +113,93 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
     setFilters((current) => ({ ...current, ...next }));
   }
 
+  function exportCsv() {
+    const header = [
+      "date",
+      "scope",
+      "source",
+      "category",
+      "currency",
+      "myShare",
+      "fullAmount",
+      "paidUpfront",
+      "paidBy",
+      "origin",
+      "needsReview",
+    ];
+    const rows = filtered.map((entry) => [
+      entry.date,
+      entry.scopeName,
+      entry.source,
+      entry.categoryName,
+      entry.currency,
+      entry.myShare.toFixed(2),
+      entry.fullAmount.toFixed(2),
+      entry.paidUpfront.toFixed(2),
+      entry.paidByName,
+      entry.origin,
+      entry.needsReview ? "yes" : "no",
+    ]);
+    const csv = [header, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell).replaceAll("\"", "\"\"")}"`)
+          .join(",")
+      )
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `splitsync-spend-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printReport() {
+    const totals = Object.entries(summary)
+      .map(
+        ([currency, item]) =>
+          `<li><strong>${currency}</strong>: ${formatMoney(item.mySpend, currency)} personal spend, ${formatMoney(item.paidUpfront, currency)} paid upfront</li>`
+      )
+      .join("");
+    const rows = filtered
+      .slice(0, 120)
+      .map(
+        (entry) =>
+          `<tr><td>${entry.date}</td><td>${entry.scopeName}</td><td>${entry.categoryName}</td><td>${entry.paidByName}</td><td>${formatMoney(entry.myShare, entry.currency)}</td></tr>`
+      )
+      .join("");
+    const win = window.open("", "_blank", "noopener,noreferrer");
+    if (!win) return;
+    win.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>SplitSync spend report</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #111827; }
+            h1 { margin: 0 0 8px; }
+            p { color: #4b5563; }
+            table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 12px; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+            th { background: #f9fafb; }
+          </style>
+        </head>
+        <body>
+          <h1>SplitSync spend report</h1>
+          <p>Generated ${new Date().toLocaleString()}</p>
+          <ul>${totals}</ul>
+          <table>
+            <thead><tr><th>Date</th><th>Group/Friend</th><th>Category</th><th>Paid by</th><th>My share</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
   if (entries.length === 0) {
     return (
       <EmptyState
@@ -108,14 +213,36 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex sm:justify-end">
-        <SettlementCopilotButton
-          contextType="spend"
-          context={copilotContext}
-          prompt="Which imported expenses need review?"
-          label="Ask Spend Copilot"
-          buttonVariant="outline"
-          className="h-11 w-full sm:h-9 sm:w-auto"
-        />
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-11 sm:h-9"
+            onClick={exportCsv}
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-11 sm:h-9"
+            onClick={printReport}
+          >
+            <Printer className="h-4 w-4" />
+            PDF
+          </Button>
+          <SettlementCopilotButton
+            contextType="spend"
+            context={copilotContext}
+            prompt="Which imported expenses need review?"
+            label="Ask Spend Copilot"
+            buttonVariant="outline"
+            className="h-11 w-full sm:h-9 sm:w-auto"
+          />
+        </div>
       </div>
       <Card className="space-y-3 border-primary/10 p-4">
         <div className="grid gap-3 md:grid-cols-3">
@@ -269,6 +396,23 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
             </Card>
           </div>
 
+          {insightRows.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-3">
+              {insightRows.map((insight) => (
+                <Card key={insight.title} className="border-primary/10 p-4">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    {insight.title}
+                  </div>
+                  <p className="mt-2 text-xl font-black">{insight.value}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {insight.detail}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
+
           {reviewRows.length > 0 && (
             <Card className="space-y-2 border-amber-300/50 bg-amber-50/40 p-4">
               <div className="flex items-center gap-2 text-sm font-black text-amber-700">
@@ -276,7 +420,13 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
                 Imported rows needing review
               </div>
               {reviewRows.map((entry) => (
-                <SpendRow key={entry.id} entry={entry} compact />
+                <SpendRow
+                  key={entry.id}
+                  entry={entry}
+                  compact
+                  onEdit={onEditEntry}
+                  onDelete={onDeleteEntry}
+                />
               ))}
             </Card>
           )}
@@ -285,7 +435,13 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
             <Card className="space-y-2 border-primary/10 p-4">
               <h3 className="font-black">Recent imports</h3>
               {recentImported.map((entry) => (
-                <SpendRow key={entry.id} entry={entry} compact />
+                <SpendRow
+                  key={entry.id}
+                  entry={entry}
+                  compact
+                  onEdit={onEditEntry}
+                  onDelete={onDeleteEntry}
+                />
               ))}
             </Card>
           )}
@@ -316,7 +472,12 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
           <Card className="space-y-2 border-primary/10 p-4">
             <h3 className="font-black">Largest expenses</h3>
             {largest.map((entry) => (
-              <SpendRow key={entry.id} entry={entry} />
+              <SpendRow
+                key={entry.id}
+                entry={entry}
+                onEdit={onEditEntry}
+                onDelete={onDeleteEntry}
+              />
             ))}
           </Card>
         </>
@@ -385,11 +546,17 @@ function BarRow({
 function SpendRow({
   entry,
   compact = false,
+  onEdit,
+  onDelete,
 }: {
   entry: SpendEntry;
   compact?: boolean;
+  onEdit?: (entry: SpendEntry) => void;
+  onDelete?: (entry: SpendEntry) => void;
 }) {
   const category = getExpenseCategory(entry.category);
+  const canEdit = Boolean(entry.editableTarget && onEdit);
+  const canDelete = Boolean(entry.deletableTarget && onDelete);
   return (
     <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-card/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <div className="min-w-0 flex-1">
@@ -414,6 +581,99 @@ function SpendRow({
           </p>
         )}
       </div>
+      {(canEdit || canDelete) && (
+        <div className="flex gap-2 self-start sm:self-center">
+          {canEdit && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onEdit?.(entry)}
+            >
+              Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => onDelete?.(entry)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function buildSpendInsights(entries: SpendEntry[]): Array<{
+  title: string;
+  value: string;
+  detail: string;
+}> {
+  if (entries.length === 0) return [];
+  const currentMonth = entries[0]?.date.slice(0, 7);
+  const months = Array.from(new Set(entries.map((entry) => entry.date.slice(0, 7)))).sort();
+  const previousMonth =
+    currentMonth && months.length > 1
+      ? months.filter((month) => month < currentMonth).at(-1)
+      : undefined;
+  const currency = entries[0].currency;
+  const sameCurrency = entries.filter((entry) => entry.currency === currency);
+  const currentSpend = sameCurrency
+    .filter((entry) => entry.date.startsWith(currentMonth ?? ""))
+    .reduce((sum, entry) => sum + entry.myShare, 0);
+  const previousSpend = previousMonth
+    ? sameCurrency
+        .filter((entry) => entry.date.startsWith(previousMonth))
+        .reduce((sum, entry) => sum + entry.myShare, 0)
+    : 0;
+  const fronted = sameCurrency.reduce(
+    (sum, entry) => sum + Math.max(0, entry.paidUpfront - entry.myShare),
+    0
+  );
+  const categoryTotals = new Map<string, number>();
+  const scopeTotals = new Map<string, number>();
+  for (const entry of sameCurrency) {
+    categoryTotals.set(
+      entry.categoryName,
+      (categoryTotals.get(entry.categoryName) ?? 0) + entry.myShare
+    );
+    scopeTotals.set(
+      entry.scopeName,
+      (scopeTotals.get(entry.scopeName) ?? 0) + entry.myShare
+    );
+  }
+  const topCategory = [...categoryTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+  const topScope = [...scopeTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+  const delta = currentSpend - previousSpend;
+
+  return [
+    {
+      title: "Month change",
+      value: previousMonth
+        ? `${delta >= 0 ? "+" : ""}${formatMoney(delta, currency)}`
+        : formatMoney(currentSpend, currency),
+      detail: previousMonth
+        ? `${currentMonth} vs ${previousMonth}`
+        : `${currentMonth ?? "This month"} spend`,
+    },
+    {
+      title: "You fronted",
+      value: formatMoney(fronted, currency),
+      detail: "Paid upfront beyond your own share.",
+    },
+    {
+      title: "Largest driver",
+      value: topCategory?.[0] ?? "No category",
+      detail: topScope
+        ? `${formatMoney(topCategory?.[1] ?? 0, currency)} category spend; top scope ${topScope[0]}`
+        : "No scope data.",
+    },
+  ];
 }

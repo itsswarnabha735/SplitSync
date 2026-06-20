@@ -2,13 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Users, ChevronRight, MoreVertical } from "lucide-react";
+import {
+  Archive,
+  Plus,
+  Trash2,
+  Users,
+  ChevronRight,
+  MoreVertical,
+} from "lucide-react";
 
 import type { Group } from "@/lib/models";
 import { useAuth } from "@/hooks/use-auth";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -32,6 +40,8 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
   const [pendingDelete, setPendingDelete] = useState<Group | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const activeGroups = groups.filter((group) => group.status !== "archived");
+  const archivedGroups = groups.filter((group) => group.status === "archived");
 
   async function confirmDelete() {
     if (!repo || !pendingDelete) return;
@@ -84,35 +94,24 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
         />
       ) : (
         <div className="space-y-2">
-          {groups.map((g) => (
-            <Card key={g.id} className="overflow-hidden border-primary/10">
-              <div className="flex items-center gap-2 p-2">
-                <Link
-                  href={`/groups/${g.id}`}
-                  className="group flex flex-1 items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-accent"
-                >
-                  <div className="social-gradient surface-glow flex h-11 w-11 items-center justify-center rounded-2xl text-white">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold">{g.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {g.memberUids.length} member
-                      {g.memberUids.length === 1 ? "" : "s"}
-                      {g.description ? ` · ${g.description}` : ""}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                </Link>
-                {g.createdBy === user?.uid && (
-                  <GroupRowActions
-                    groupName={g.name}
-                    onDelete={() => setPendingDelete(g)}
-                  />
-                )}
+          <GroupRows
+            groups={activeGroups}
+            userUid={user?.uid}
+            onDelete={setPendingDelete}
+          />
+          {archivedGroups.length > 0 && (
+            <div className="pt-2">
+              <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
+                <Archive className="h-3.5 w-3.5" />
+                Archived
               </div>
-            </Card>
-          ))}
+              <GroupRows
+                groups={archivedGroups}
+                userUid={user?.uid}
+                onDelete={setPendingDelete}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -162,6 +161,57 @@ export function GroupsTab({ groups }: { groups: Group[] }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function GroupRows({
+  groups,
+  userUid,
+  onDelete,
+}: {
+  groups: Group[];
+  userUid?: string;
+  onDelete: (group: Group) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {groups.map((g) => (
+        <Card key={g.id} className="overflow-hidden border-primary/10">
+          <div className="flex items-center gap-2 p-2">
+            <Link
+              href={`/groups/${g.id}`}
+              className="group flex flex-1 items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-accent"
+            >
+              <div className="social-gradient surface-glow flex h-11 w-11 items-center justify-center rounded-2xl text-white">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate font-bold">{g.name}</p>
+                  {g.status === "archived" && (
+                    <Badge variant="muted" className="shrink-0">
+                      Archived
+                    </Badge>
+                  )}
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                  {g.memberUids.length} member
+                  {g.memberUids.length === 1 ? "" : "s"}
+                  {g.description ? ` · ${g.description}` : ""}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            {g.createdBy === userUid && (
+              <GroupRowActions
+                groupName={g.name}
+                onDelete={() => onDelete(g)}
+              />
+            )}
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }

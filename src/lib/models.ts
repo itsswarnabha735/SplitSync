@@ -23,6 +23,16 @@ import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 export const YOU_ID = "self" as const;
 
 export type SplitType = "EQUAL" | "EXACT";
+export type GroupTemplate =
+  | "custom"
+  | "trip"
+  | "flatmates"
+  | "couple"
+  | "office"
+  | "event";
+export type PaymentMethod = "upi" | "bank" | "cash" | "other";
+export type RecurringFrequency = "weekly" | "monthly" | "quarterly" | "yearly";
+export type ExpenseDisputeStatus = "none" | "needs_clarification" | "resolved";
 export type ExpenseSourceType =
   | "statement-import"
   | "ai-text"
@@ -52,6 +62,13 @@ export interface Group {
   createdBy: string;
   /** Flat array of every member uid currently in the group; drives access rules. */
   memberUids: string[];
+  status?: "active" | "archived";
+  archivedAt?: number;
+  archivedByUid?: string;
+  template?: GroupTemplate;
+  defaultCurrency?: string;
+  settlementCurrency?: string;
+  travelMode?: boolean;
 }
 
 export interface GroupMember {
@@ -61,9 +78,29 @@ export interface GroupMember {
   email: string;
   /** uid of a SplitSync user this member is linked to, when one exists. */
   linkedUid: string;
+  preferredPaymentMethod?: PaymentMethod;
+  paymentHandle?: string;
+  paymentLink?: string;
 }
 
-export interface Expense extends ExpenseImportProvenance {
+export interface ExpenseFxMetadata {
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRate?: number;
+  fxNote?: string;
+}
+
+export interface ExpenseDisputeMetadata {
+  disputeStatus?: ExpenseDisputeStatus;
+  disputedByUid?: string;
+  disputedAt?: number;
+  disputeNote?: string;
+}
+
+export interface Expense
+  extends ExpenseImportProvenance,
+    ExpenseFxMetadata,
+    ExpenseDisputeMetadata {
   id: string;
   groupId: string;
   description: string;
@@ -87,6 +124,36 @@ export interface Expense extends ExpenseImportProvenance {
   editCount?: number;
 }
 
+export interface ExpenseComment {
+  id: string;
+  groupId: string;
+  expenseId: string;
+  body: string;
+  createdAt: number;
+  createdByUid: string;
+  createdByName: string;
+}
+
+export interface RecurringExpense extends ExpenseFxMetadata {
+  id: string;
+  groupId: string;
+  description: string;
+  amount: number;
+  paidById: string;
+  splitType: SplitType;
+  currency: string;
+  splits: Record<string, number>;
+  category?: ExpenseCategorySlug;
+  frequency: RecurringFrequency;
+  nextDueAt: number;
+  active: boolean;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+  createdByUid: string;
+  lastPostedAt?: number;
+}
+
 export interface Payment {
   id: string;
   groupId: string;
@@ -97,6 +164,31 @@ export interface Payment {
   currency: string;
   /** uid of the user who recorded the settlement. */
   createdByUid?: string;
+  updatedAt?: number;
+  lastEditedByUid?: string;
+  editCount?: number;
+}
+
+export type SettlementRequestStatus =
+  | "requested"
+  | "reminded"
+  | "dismissed"
+  | "settled";
+
+export interface SettlementRequest {
+  id: string;
+  groupId: string;
+  fromMemberId: string;
+  toMemberId: string;
+  amount: number;
+  currency: string;
+  message: string;
+  status: SettlementRequestStatus;
+  createdAt: number;
+  updatedAt: number;
+  requestedByUid: string;
+  lastRemindedAt?: number;
+  remindAfter?: number;
 }
 
 export interface Friend {

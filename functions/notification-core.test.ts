@@ -7,6 +7,10 @@ const {
   shouldSendChannel,
   largeExpenseTags,
   buildGroupExpenseNotification,
+  buildMirroredAdHocExpense,
+  buildSourceAdHocExpenseFromMirror,
+  shouldHandleSourceAdHocDelete,
+  sourcePathForAdHocMirrorDelete,
 } = require("./notification-core.js");
 
 describe("notification-core", () => {
@@ -61,5 +65,94 @@ describe("notification-core", () => {
     expect(notification.title).toBe("New expense in Goa Trip");
     expect(notification.body).toContain("Dinner");
     expect(notification.body).toContain("Your share");
+  });
+
+  it("mirrors ad-hoc expenses into the linked payer ledger", () => {
+    const mirrored = buildMirroredAdHocExpense(
+      {
+        id: "expense-1",
+        description: "Cab",
+        paidByFriendId: "friend-uid",
+        splits: { self: 100, "friend-uid": 100 },
+      },
+      {
+        mirrorId: "owner-uid_expense-1",
+        sourceOwnerUid: "owner-uid",
+        sourceExpenseId: "expense-1",
+        sourceFriendId: "friend-uid",
+      }
+    );
+
+    expect(mirrored).toMatchObject({
+      id: "owner-uid_expense-1",
+      paidByFriendId: "self",
+      splits: { "owner-uid": 100, self: 100 },
+      mirroredFromPath: "users/owner-uid/adhocExpenses/expense-1",
+      mirroredFromUid: "owner-uid",
+      originalId: "expense-1",
+    });
+  });
+
+  it("maps payer-side mirror edits back to the source ledger", () => {
+    const source = buildSourceAdHocExpenseFromMirror(
+      {
+        id: "owner-uid_expense-1",
+        description: "Cab updated",
+        paidByFriendId: "self",
+        splits: { "owner-uid": 80, self: 120 },
+        mirroredFromPath: "users/owner-uid/adhocExpenses/expense-1",
+        mirroredFromUid: "owner-uid",
+        originalId: "expense-1",
+      },
+      {
+        sourceOwnerUid: "owner-uid",
+        sourceExpenseId: "expense-1",
+        sourceFriendId: "friend-uid",
+      }
+    );
+
+    expect(source).toMatchObject({
+      id: "expense-1",
+      description: "Cab updated",
+      paidByFriendId: "friend-uid",
+      splits: { self: 80, "friend-uid": 120 },
+    });
+    expect(source.mirroredFromPath).toBeUndefined();
+  });
+
+  it("resolves mirrored ad-hoc expense deletes to the source path", () => {
+    expect(
+      sourcePathForAdHocMirrorDelete(
+        {
+          mirroredFromPath: "users/owner-uid/adhocExpenses/expense-1",
+          mirroredFromUid: "owner-uid",
+          originalId: "expense-1",
+        },
+        "adhocExpenses"
+      )
+    ).toBe("users/owner-uid/adhocExpenses/expense-1");
+  });
+
+  it("resolves mirrored ad-hoc payment deletes to the source path", () => {
+    expect(
+      sourcePathForAdHocMirrorDelete(
+        {
+          mirroredFromPath: "users/owner-uid/adhocPayments/payment-1",
+          mirroredFromUid: "owner-uid",
+          originalId: "payment-1",
+        },
+        "adhocPayments"
+      )
+    ).toBe("users/owner-uid/adhocPayments/payment-1");
+  });
+
+  it("rejects source delete handling for mirror docs", () => {
+    expect(shouldHandleSourceAdHocDelete({ id: "source-1" })).toBe(true);
+    expect(
+      shouldHandleSourceAdHocDelete({
+        id: "mirror-1",
+        mirroredFromPath: "users/owner-uid/adhocExpenses/source-1",
+      })
+    ).toBe(false);
   });
 });

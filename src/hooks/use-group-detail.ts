@@ -4,9 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   Expense,
+  ExpenseComment,
   Group,
   GroupMember,
   Payment,
+  RecurringExpense,
+  SettlementRequest,
 } from "@/lib/models";
 import { calculateGroupBalances } from "@/lib/balances";
 import {
@@ -26,6 +29,13 @@ export function useGroupDetail(groupId: string | null) {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [settlementRequests, setSettlementRequests] = useState<
+    SettlementRequest[]
+  >([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<
+    RecurringExpense[]
+  >([]);
+  const [expenseComments, setExpenseComments] = useState<ExpenseComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +44,9 @@ export function useGroupDetail(groupId: string | null) {
     setMembers([]);
     setExpenses([]);
     setPayments([]);
+    setSettlementRequests([]);
+    setRecurringExpenses([]);
+    setExpenseComments([]);
     setError(null);
 
     if (!repo || !groupId) {
@@ -50,6 +63,9 @@ export function useGroupDetail(groupId: string | null) {
       setMembers([]);
       setExpenses([]);
       setPayments([]);
+      setSettlementRequests([]);
+      setRecurringExpenses([]);
+      setExpenseComments([]);
       setError(err.message || "Unable to load this group.");
       setLoading(false);
     };
@@ -79,6 +95,27 @@ export function useGroupDetail(groupId: string | null) {
         groupId,
         (nextPayments) => {
           if (active) setPayments(nextPayments);
+        },
+        handleError
+      ),
+      repo.subscribeSettlementRequests(
+        groupId,
+        (nextRequests) => {
+          if (active) setSettlementRequests(nextRequests);
+        },
+        handleError
+      ),
+      repo.subscribeRecurringExpenses(
+        groupId,
+        (nextRecurring) => {
+          if (active) setRecurringExpenses(nextRecurring);
+        },
+        handleError
+      ),
+      repo.subscribeExpenseComments(
+        groupId,
+        (nextComments) => {
+          if (active) setExpenseComments(nextComments);
         },
         handleError
       ),
@@ -126,6 +163,9 @@ export function useGroupDetail(groupId: string | null) {
     members,
     expenses,
     payments,
+    settlementRequests,
+    recurringExpenses,
+    expenseComments,
     balances,
     simplifiedDebts: debtState.simplifiedDebts,
     settlementError: debtState.settlementError,

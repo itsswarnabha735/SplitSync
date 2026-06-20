@@ -77,7 +77,8 @@ export default function AddExpensePage({
   const runSyncing = useUiStore((s) => s.runSyncing);
   const showToast = useUiStore((s) => s.showToast);
   const { user } = useAuth();
-  const { members, expenses } = useGroupDetail(groupId);
+  const { group, members, expenses } = useGroupDetail(groupId);
+  const groupArchived = group?.status === "archived";
 
   const participants = useMemo(
     () => members.map((m) => ({ id: m.id, name: m.name })),
@@ -88,6 +89,10 @@ export default function AddExpensePage({
   const [amountStr, setAmountStr] = useState("");
   const [paidBy, setPaidBy] = useState<string>("");
   const [currency, setCurrency] = useState("USD");
+  const [originalAmountStr, setOriginalAmountStr] = useState("");
+  const [originalCurrency, setOriginalCurrency] = useState("USD");
+  const [exchangeRateStr, setExchangeRateStr] = useState("");
+  const [fxNote, setFxNote] = useState("");
   const [category, setCategory] = useState<ExpenseCategorySlug>("other");
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [dateStr, setDateStr] = useState(() => toDateInputValue());
@@ -209,6 +214,14 @@ export default function AddExpensePage({
       setCategory(suggestedCategory);
     }
   }, [categoryTouched, suggestedCategory]);
+
+  useEffect(() => {
+    if (!group) return;
+    if (!amountStr) {
+      setCurrency(group.settlementCurrency ?? group.defaultCurrency ?? "USD");
+      setOriginalCurrency(group.defaultCurrency ?? "USD");
+    }
+  }, [amountStr, group]);
 
   const memberName = useMemo(() => {
     const map = new Map(participants.map((p) => [p.id, p.name]));
@@ -365,6 +378,10 @@ export default function AddExpensePage({
   }
 
   function handleReview() {
+    if (groupArchived) {
+      setError("Restore this archived group before adding a new expense.");
+      return;
+    }
     const next = getValidatedSplits();
     if (!next) return;
     setReviewSplits(next.splits);
@@ -552,6 +569,10 @@ export default function AddExpensePage({
   }
 
   async function handleSave() {
+    if (groupArchived) {
+      setError("Restore this archived group before adding a new expense.");
+      return;
+    }
     const validated = reviewSplits
       ? {
           splits: reviewSplits,
@@ -584,6 +605,16 @@ export default function AddExpensePage({
                 (candidate) => `Possible duplicate: ${candidate.expense.description}`
               ),
             ].slice(0, 10),
+            originalAmount: group?.travelMode && originalAmountStr
+              ? Number(originalAmountStr)
+              : undefined,
+            originalCurrency:
+              group?.travelMode && originalAmountStr ? originalCurrency : undefined,
+            exchangeRate:
+              group?.travelMode && exchangeRateStr
+                ? Number(exchangeRateStr)
+                : undefined,
+            fxNote: group?.travelMode ? fxNote : undefined,
           }),
         {
           loading: "Saving expense...",
@@ -622,6 +653,13 @@ export default function AddExpensePage({
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
+          </div>
+        )}
+
+        {groupArchived && (
+          <div className="rounded-2xl border border-amber-300/60 bg-amber-50/90 px-4 py-3 text-sm font-semibold text-amber-950">
+            This group is archived. Restore it from Manage group before adding
+            new expenses.
           </div>
         )}
 
@@ -789,6 +827,56 @@ export default function AddExpensePage({
           </div>
         </Card>
 
+        {group?.travelMode && (
+          <Card className="space-y-4 border-primary/10 bg-primary/5 p-5">
+            <p className="text-xs font-black uppercase tracking-wide text-primary">
+              Travel and FX
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="exp-original-amount">Original amount</Label>
+                <Input
+                  id="exp-original-amount"
+                  inputMode="decimal"
+                  value={originalAmountStr}
+                  onChange={(event) => setOriginalAmountStr(event.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="exp-original-currency">Original currency</Label>
+                <NativeSelect
+                  id="exp-original-currency"
+                  value={originalCurrency}
+                  onChange={(event) => setOriginalCurrency(event.target.value)}
+                >
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="exp-exchange-rate">FX rate</Label>
+                <Input
+                  id="exp-exchange-rate"
+                  inputMode="decimal"
+                  value={exchangeRateStr}
+                  onChange={(event) => setExchangeRateStr(event.target.value)}
+                  placeholder={`1 ${originalCurrency} to ${currency}`}
+                />
+              </div>
+            </div>
+            <textarea
+              className="min-h-16 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={fxNote}
+              onChange={(event) => setFxNote(event.target.value)}
+              placeholder="FX source, card rate, or cash conversion note"
+            />
+          </Card>
+        )}
+
         <div className="space-y-2">
           <SplitTypeToggle
             value={splitType}
@@ -882,9 +970,13 @@ export default function AddExpensePage({
             className="w-full"
             size="lg"
             onClick={handleReview}
-            disabled={saving}
+            disabled={saving || groupArchived}
           >
-            {saving ? "Saving expense..." : "Review expense"}
+            {groupArchived
+              ? "Group archived"
+              : saving
+                ? "Saving expense..."
+                : "Review expense"}
           </Button>
         </div>
       </div>

@@ -160,4 +160,60 @@ describe("spend analysis", () => {
     expect(summary.INR.importedNeedsReviewCount).toBe(1);
     expect(summary.INR.uncategorizedCount).toBe(1);
   });
+
+  it("adds an editable target to group expenses the user can edit", () => {
+    const [entry] = entries({
+      groupExpenses: [
+        groupExpense({
+          id: "group-expense-1",
+          createdByUid: uid,
+        }),
+      ],
+    });
+
+    expect(entry?.editableTarget).toEqual({
+      kind: "groupExpense",
+      groupId: "group-1",
+      expenseId: "group-expense-1",
+    });
+    expect(entry?.deletableTarget).toEqual({
+      kind: "groupExpense",
+      groupId: "group-1",
+      expenseId: "group-expense-1",
+    });
+  });
+
+  it("adds an editable target to ad-hoc expenses the user can edit", () => {
+    const [entry] = entries({
+      adHocExpenses: [
+        adHocExpense({
+          id: "adhoc-expense-1",
+          createdByUid: uid,
+        }),
+      ],
+    });
+
+    expect(entry?.editableTarget).toEqual({
+      kind: "adHocExpense",
+      expenseId: "adhoc-expense-1",
+    });
+    expect(entry?.deletableTarget).toEqual({
+      kind: "adHocExpense",
+      expenseId: "adhoc-expense-1",
+    });
+  });
+
+  it("omits editable targets for group expenses by unrelated members", () => {
+    const [entry] = entries({
+      groupExpenses: [
+        groupExpense({
+          createdByUid: "other-uid",
+          paidById: "member-2",
+        }),
+      ],
+    });
+
+    expect(entry?.editableTarget).toBeUndefined();
+    expect(entry?.deletableTarget).toBeUndefined();
+  });
 });

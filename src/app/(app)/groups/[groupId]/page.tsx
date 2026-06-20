@@ -7,10 +7,13 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle2,
+  Edit3,
+  Eye,
   Lightbulb,
   MoreVertical,
   Plus,
   Receipt,
+  Settings,
   Trash2,
   UserPlus,
 } from "lucide-react";
@@ -20,6 +23,12 @@ import { netBalance } from "@/lib/models";
 import { currencySymbol, formatMoney } from "@/lib/currency";
 import { getExpenseCategory } from "@/lib/expense-categories";
 import { buildGroupCopilotContext } from "@/lib/settlement-copilot-context";
+import {
+  canDeleteGroupExpense,
+  canDeleteGroupPayment,
+  canEditGroupExpense,
+  canEditGroupPayment,
+} from "@/lib/edit-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useGroupDetail } from "@/hooks/use-group-detail";
 import { useRepository } from "@/hooks/use-repository";
@@ -48,6 +57,17 @@ import {
 import { InviteMemberDialog } from "@/components/dialogs/invite-member-dialog";
 import { SettleGroupDialog } from "@/components/dialogs/settle-group-dialog";
 import { SettlementCopilotButton } from "@/components/settlement-copilot";
+import {
+  EditExpenseDialog,
+  EditPaymentDialog,
+  ExpenseDetailDialog,
+  GroupManageDialog,
+  RequestStatusBadge,
+  RecurringExpensesPanel,
+  SettlementRequestDialog,
+  matchingRequestForDebt,
+  settlementRequestLabel,
+} from "@/components/group-ledger-actions";
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, {
@@ -60,12 +80,20 @@ function formatDate(ts: number): string {
 function RowActions({
   label,
   deleteLabel,
+  editLabel,
+  onView,
+  onEdit,
   onDelete,
 }: {
   label: string;
   deleteLabel: string;
-  onDelete: () => void;
+  editLabel?: string;
+  onView?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
+  if (!onView && !onEdit && !onDelete) return null;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -79,16 +107,40 @@ function RowActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onSelect={(event) => {
-            event.preventDefault();
-            onDelete();
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-          {deleteLabel}
-        </DropdownMenuItem>
+        {onView && (
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              onView();
+            }}
+          >
+            <Eye className="h-4 w-4" />
+            View details
+          </DropdownMenuItem>
+        )}
+        {onEdit && (
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              onEdit();
+            }}
+          >
+            <Edit3 className="h-4 w-4" />
+            {editLabel ?? "Edit"}
+          </DropdownMenuItem>
+        )}
+        {onDelete && (
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={(event) => {
+              event.preventDefault();
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleteLabel}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -114,6 +166,9 @@ export default function GroupDetailPage({
     members,
     expenses,
     payments,
+    settlementRequests,
+    recurringExpenses,
+    expenseComments,
     balances,
     simplifiedDebts,
     settlementError,
@@ -123,7 +178,12 @@ export default function GroupDetailPage({
   } = useGroupDetail(groupId);
 
   const [showInvite, setShowInvite] = useState(false);
+  const [showManage, setShowManage] = useState(false);
   const [settleDebt, setSettleDebt] = useState<DebtOverview | null>(null);
+  const [requestDebt, setRequestDebt] = useState<DebtOverview | null>(null);
+  const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null
   );
@@ -142,6 +202,56 @@ export default function GroupDetailPage({
     );
     return (id: string) => map.get(id) ?? "Unknown";
   }, [members, uid]);
+
+  const groupArchived = group?.status === "archived";
+  const canEditExpenseRow = (expense: Expense) =>
+    canEditGroupExpense({ group, members, expense, uid });
+  const canEditPaymentRow = (payment: Payment) =>
+    canEditGroupPayment({ group, members, payment, uid });
+  const canDeleteExpenseRow = (expense: Expense) =>
+    canDeleteGroupExpense({ group, members, expense, uid });
+  const canDeletePaymentRow = (payment: Payment) =>
+    canDeleteGroupPayment({ group, members, payment, uid });
+
+  const activeSettlementRequests = useMemo(() => {
+    return settlementRequests
+      .filter(
+        (request) =>
+          request.status !== "dismissed" && request.status !== "settled"
+      )
+      .map((request) => {
+        const debtor = members.find((member) => member.id === request.fromMemberId);
+        const creditor = members.find((member) => member.id === request.toMemberId);
+        if (!debtor || !creditor) return null;
+        return {
+          request,
+          debt: {
+            debtor,
+            creditor,
+            amount: request.amount,
+            currency: request.currency,
+          } satisfies DebtOverview,
+        };
+      })
+      .filter(
+        (entry): entry is { request: (typeof settlementRequests)[number]; debt: DebtOverview } =>
+          Boolean(entry)
+      );
+  }, [members, settlementRequests]);
+
+  const currentRequestForDebt = requestDebt
+    ? matchingRequestForDebt(settlementRequests, requestDebt)
+    : undefined;
+
+  const originalCurrencyTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const expense of expenses) {
+      if (!expense.originalAmount || !expense.originalCurrency) continue;
+      totals[expense.originalCurrency] =
+        (totals[expense.originalCurrency] ?? 0) + expense.originalAmount;
+    }
+    return totals;
+  }, [expenses]);
 
   const groupCopilotContext = useMemo(
     () =>
@@ -255,18 +365,36 @@ export default function GroupDetailPage({
         showBack
         onBack={() => router.push("/dashboard")}
         actions={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Invite member"
-            onClick={() => setShowInvite(true)}
-          >
-            <UserPlus className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Invite member"
+              onClick={() => setShowInvite(true)}
+              disabled={groupArchived}
+            >
+              <UserPlus className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Manage group"
+              onClick={() => setShowManage(true)}
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          </div>
         }
       />
 
       <main id="main-content" className="container space-y-4 py-6">
+        {groupArchived && (
+          <div className="rounded-2xl border border-amber-300/60 bg-amber-50/90 px-4 py-3 text-sm font-semibold text-amber-950">
+            This group is archived. Restore it from Manage group before adding
+            new expenses or inviting members.
+          </div>
+        )}
+
         <Card className="money-card social-gradient surface-glow p-5 text-white">
           <div className="relative z-10">
             <p className="text-xs font-black uppercase opacity-85">
@@ -280,6 +408,22 @@ export default function GroupDetailPage({
           </div>
         </Card>
 
+        {group?.travelMode && Object.keys(originalCurrencyTotals).length > 0 && (
+          <Card className="border-primary/10 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+              Travel original-currency spend
+            </p>
+            <CurrencyTotals
+              totals={originalCurrencyTotals}
+              className="mt-2 text-2xl font-black"
+            />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Ledger balances still settle in{" "}
+              {group.settlementCurrency ?? group.defaultCurrency ?? "the group currency"}.
+            </p>
+          </Card>
+        )}
+
         <Tabs defaultValue="ledger">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="ledger">Ledger</TabsTrigger>
@@ -289,6 +433,11 @@ export default function GroupDetailPage({
 
           {/* LEDGER */}
           <TabsContent value="ledger" className="space-y-2">
+            <RecurringExpensesPanel
+              group={group}
+              members={members}
+              recurringExpenses={recurringExpenses}
+            />
             {expenses.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
@@ -297,34 +446,50 @@ export default function GroupDetailPage({
               />
             ) : (
               expenses.map((e) => (
-                <Card
-                  key={e.id}
-                  className="flex items-center gap-3 border-primary/10 p-3"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
-                    <Receipt className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <p className="truncate font-bold">{e.description}</p>
-                      {e.category && (
-                        <CategoryBadge categorySlug={e.category} />
-                      )}
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      Paid by {memberName(e.paidById)} · {e.splitType} ·{" "}
-                      {formatDate(e.timestamp)}
-                    </p>
-                  </div>
-                  <span className="font-black">
-                    {formatMoney(e.amount, e.currency)}
-                  </span>
-                  <RowActions
-                    label={e.description}
-                    deleteLabel="Delete expense"
-                    onDelete={() => setPendingDelete({ kind: "expense", item: e })}
-                  />
-                </Card>
+                (() => {
+                const canEdit = canEditExpenseRow(e);
+                const canDelete = canDeleteExpenseRow(e);
+                return (
+                    <Card
+                      key={e.id}
+                      className="flex items-center gap-3 border-primary/10 p-3"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+                        <Receipt className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate font-bold">{e.description}</p>
+                          {e.category && (
+                            <CategoryBadge categorySlug={e.category} />
+                          )}
+                          {e.disputeStatus === "needs_clarification" && (
+                            <Badge variant="destructive">Clarify</Badge>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Paid by {memberName(e.paidById)} · {e.splitType} ·{" "}
+                          {formatDate(e.timestamp)}
+                        </p>
+                      </div>
+                      <span className="font-black">
+                        {formatMoney(e.amount, e.currency)}
+                      </span>
+                      <RowActions
+                        label={e.description}
+                        deleteLabel="Delete expense"
+                        editLabel="Edit expense"
+                        onView={() => setDetailExpense(e)}
+                        onEdit={canEdit ? () => setEditingExpense(e) : undefined}
+                        onDelete={
+                          canDelete
+                            ? () => setPendingDelete({ kind: "expense", item: e })
+                            : undefined
+                        }
+                      />
+                    </Card>
+                  );
+                })()
               ))
             )}
           </TabsContent>
@@ -413,6 +578,43 @@ export default function GroupDetailPage({
               )}
             </div>
 
+            {activeSettlementRequests.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                  Settlement requests
+                </p>
+                {activeSettlementRequests.map(({ request, debt }) => (
+                  <Card
+                    key={request.id}
+                    className="flex flex-col gap-3 border-primary/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold">
+                          {labelForMember(debt.debtor)} pays{" "}
+                          {labelForMember(debt.creditor)}
+                        </p>
+                        <Badge variant="outline">
+                          {settlementRequestLabel(request)}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatMoney(request.amount, request.currency)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRequestDebt(debt)}
+                    >
+                      <Lightbulb className="h-4 w-4" />
+                      Update request
+                    </Button>
+                  </Card>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-2">
               <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
                 Recommended payments
@@ -441,6 +643,11 @@ export default function GroupDetailPage({
                   </div>
                   {simplifiedDebts.map((d, i) => (
                     <Card key={i} className="space-y-3 border-primary/10 p-4">
+                      <div className="flex justify-end">
+                        <RequestStatusBadge
+                          request={matchingRequestForDebt(settlementRequests, d)}
+                        />
+                      </div>
                       <div className="flex items-center gap-3">
                         <div className="flex-1 rounded-2xl bg-destructive/10 px-3 py-2 text-center">
                           <p className="text-[10px] font-bold text-destructive">
@@ -463,7 +670,17 @@ export default function GroupDetailPage({
                           </p>
                         </div>
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setRequestDebt(d)}
+                        >
+                          <Lightbulb className="h-4 w-4" />
+                          {matchingRequestForDebt(settlementRequests, d)
+                            ? "Update request"
+                            : "Request payment"}
+                        </Button>
                         <Button size="sm" onClick={() => setSettleDebt(d)}>
                           <CheckCircle2 className="h-4 w-4" />
                           Record payment
@@ -486,33 +703,45 @@ export default function GroupDetailPage({
               />
             ) : (
               payments.map((p) => (
-                <Card
-                  key={p.id}
-                  className="flex items-center gap-3 border-success/15 p-3"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-success/15 text-success">
-                    <CheckCircle2 className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold">
-                      {memberName(p.fromMemberId)} paid{" "}
-                      {memberName(p.toMemberId)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(p.timestamp)}
-                    </p>
-                  </div>
-                  <span className="font-black text-success">
-                    {formatMoney(p.amount, p.currency)}
-                  </span>
-                  <RowActions
-                    label={`${memberName(p.fromMemberId)} paid ${memberName(
-                      p.toMemberId
-                    )}`}
-                    deleteLabel="Delete settlement"
-                    onDelete={() => setPendingDelete({ kind: "payment", item: p })}
-                  />
-                </Card>
+                (() => {
+                const canEdit = canEditPaymentRow(p);
+                const canDelete = canDeletePaymentRow(p);
+                return (
+                    <Card
+                      key={p.id}
+                      className="flex items-center gap-3 border-success/15 p-3"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-success/15 text-success">
+                        <CheckCircle2 className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-bold">
+                          {memberName(p.fromMemberId)} paid{" "}
+                          {memberName(p.toMemberId)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(p.timestamp)}
+                        </p>
+                      </div>
+                      <span className="font-black text-success">
+                        {formatMoney(p.amount, p.currency)}
+                      </span>
+                      <RowActions
+                        label={`${memberName(p.fromMemberId)} paid ${memberName(
+                          p.toMemberId
+                        )}`}
+                        deleteLabel="Delete settlement"
+                        editLabel="Edit settlement"
+                        onEdit={canEdit ? () => setEditingPayment(p) : undefined}
+                        onDelete={
+                          canDelete
+                            ? () => setPendingDelete({ kind: "payment", item: p })
+                            : undefined
+                        }
+                      />
+                    </Card>
+                  );
+                })()
               ))
             )}
           </TabsContent>
@@ -525,9 +754,10 @@ export default function GroupDetailPage({
             className="w-full"
             size="lg"
             onClick={() => router.push(`/groups/${groupId}/add-expense`)}
+            disabled={groupArchived}
           >
             <Plus className="h-5 w-5" />
-            Add expense
+            {groupArchived ? "Group archived" : "Add expense"}
           </Button>
         </div>
       </div>
@@ -536,6 +766,57 @@ export default function GroupDetailPage({
         group={group}
         open={showInvite}
         onOpenChange={setShowInvite}
+      />
+      <GroupManageDialog
+        group={group}
+        members={members}
+        open={showManage}
+        onOpenChange={setShowManage}
+      />
+      <ExpenseDetailDialog
+        expense={detailExpense}
+        members={members}
+        comments={expenseComments}
+        open={!!detailExpense}
+        canEdit={detailExpense ? canEditExpenseRow(detailExpense) : false}
+        canDelete={detailExpense ? canDeleteExpenseRow(detailExpense) : false}
+        onOpenChange={(open) => {
+          if (!open) setDetailExpense(null);
+        }}
+        onEdit={(expense) => {
+          setDetailExpense(null);
+          setEditingExpense(expense);
+        }}
+        onDelete={(expense) => {
+          setDetailExpense(null);
+          setPendingDelete({ kind: "expense", item: expense });
+        }}
+      />
+      <EditExpenseDialog
+        expense={editingExpense}
+        members={members}
+        open={!!editingExpense}
+        onOpenChange={(open) => {
+          if (!open) setEditingExpense(null);
+        }}
+      />
+      <EditPaymentDialog
+        payment={editingPayment}
+        members={members}
+        open={!!editingPayment}
+        onOpenChange={(open) => {
+          if (!open) setEditingPayment(null);
+        }}
+      />
+      <SettlementRequestDialog
+        group={group}
+        members={members}
+        debt={requestDebt}
+        existingRequest={currentRequestForDebt}
+        open={!!requestDebt}
+        onOpenChange={(open) => {
+          if (!open) setRequestDebt(null);
+        }}
       />
       <SettleGroupDialog
         groupId={groupId}
