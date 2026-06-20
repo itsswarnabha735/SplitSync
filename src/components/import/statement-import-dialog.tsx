@@ -458,6 +458,7 @@ export function StatementImportDialog({
         {stage === "review" && result && (
           <div className="space-y-4">
             <StatementSummary result={result} selectedTotal={selectedTotal} />
+            <ImportReviewPreview rows={rows} selectedCount={selectedRows.length} />
             <div className="rounded-2xl border border-primary/15 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary">
               The selected payer and split pattern apply to every selected row.
               Create separate imports when rows need different payers or
@@ -548,7 +549,24 @@ export function StatementImportDialog({
                   />
                 </div>
               </div>
-              <div className="max-h-72 overflow-auto">
+              <div className="space-y-2 p-2 md:hidden">
+                {rows.map((row) => (
+                  <StatementRowCard
+                    key={row.id}
+                    row={row}
+                    currency={currency}
+                    onToggle={(checked) =>
+                      updateRow(row.id, { selected: Boolean(checked) })
+                    }
+                    onDateChange={(date) => updateRow(row.id, { date })}
+                    onVendorChange={(vendor) => updateRow(row.id, { vendor })}
+                    onCategoryChange={(nextCategory) =>
+                      updateRowCategory(row.id, nextCategory)
+                    }
+                  />
+                ))}
+              </div>
+              <div className="hidden max-h-72 overflow-auto md:block">
                 <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
                   <thead className="text-xs uppercase text-muted-foreground">
                     <tr>
@@ -637,7 +655,12 @@ export function StatementImportDialog({
               </div>
             </div>
 
-            <SplitTypeToggle value={splitType} onChange={setSplitType} />
+            <SplitTypeToggle
+              value={splitType}
+              onChange={(next) => {
+                if (next === "EQUAL" || next === "EXACT") setSplitType(next);
+              }}
+            />
             <SplitEditor
               participants={participants}
               amount={selectedTotal}
@@ -722,6 +745,111 @@ function WarningBadges({ flags }: { flags: StatementImportWarningFlag[] }) {
         </Badge>
       ))}
     </div>
+  );
+}
+
+function ImportReviewPreview({
+  rows,
+  selectedCount,
+}: {
+  rows: StatementImportRow[];
+  selectedCount: number;
+}) {
+  const warningCount = rows.filter((row) => row.warningFlags.length > 0).length;
+  const duplicateCount = rows.filter((row) =>
+    row.warningFlags.includes("duplicate-like")
+  ).length;
+  const needsReviewCount = rows.filter(
+    (row) => row.selected && row.warningFlags.length > 0
+  ).length;
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      <Badge variant="default">{selectedCount} selected</Badge>
+      <Badge variant={needsReviewCount > 0 ? "outline" : "muted"}>
+        {needsReviewCount} selected need review
+      </Badge>
+      <Badge variant={duplicateCount > 0 ? "outline" : "muted"}>
+        {duplicateCount} duplicates skipped
+      </Badge>
+      {warningCount > 0 && (
+        <p className="text-xs font-semibold text-muted-foreground sm:col-span-3">
+          {warningCount} recognized rows have warning badges. Review them before
+          importing.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function StatementRowCard({
+  row,
+  currency,
+  onToggle,
+  onDateChange,
+  onVendorChange,
+  onCategoryChange,
+}: {
+  row: StatementImportRow;
+  currency: string;
+  onToggle: (checked: boolean) => void;
+  onDateChange: (date: string) => void;
+  onVendorChange: (vendor: string) => void;
+  onCategoryChange: (category: ExpenseCategorySlug) => void;
+}) {
+  return (
+    <Card className="space-y-3 border-primary/10 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <label className="flex items-center gap-2 font-bold">
+          <Checkbox
+            checked={row.selected}
+            disabled={!row.selectable}
+            onCheckedChange={(checked) => onToggle(Boolean(checked))}
+          />
+          Use row
+        </label>
+        <span className="font-black">{formatMoney(Math.abs(row.amount), currency)}</span>
+      </div>
+      <div className="grid gap-2">
+        <div className="space-y-1">
+          <Label htmlFor={`statement-date-${row.id}`}>Date</Label>
+          <Input
+            id={`statement-date-${row.id}`}
+            type="date"
+            value={row.date}
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`statement-vendor-${row.id}`}>Description</Label>
+          <Input
+            id={`statement-vendor-${row.id}`}
+            value={row.vendor}
+            onChange={(event) => onVendorChange(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`statement-category-${row.id}`}>Category</Label>
+          <NativeSelect
+            id={`statement-category-${row.id}`}
+            value={row.category}
+            onChange={(event) =>
+              onCategoryChange(event.target.value as ExpenseCategorySlug)
+            }
+          >
+            {EXPENSE_CATEGORIES.map((category) => (
+              <option key={category.slug} value={category.slug}>
+                {category.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+      {!row.selectable && (
+        <p className="text-xs font-semibold text-muted-foreground">{row.type} row</p>
+      )}
+      <WarningBadges flags={row.warningFlags} />
+    </Card>
   );
 }
 

@@ -97,6 +97,7 @@ export type ExpenseAutocompleteStatus =
 export interface AppliedExpenseAutocomplete {
   status: ExpenseAutocompleteStatus;
   draft: ExpenseAutocompleteDraft;
+  confidence: ExpenseAutocompleteConfidence;
   appliedFields: string[];
   warnings: ExpenseAutocompleteWarning[];
   fields: {
@@ -456,6 +457,7 @@ export function applyExpenseAutocompleteDraft(params: {
   return {
     status,
     draft,
+    confidence,
     appliedFields,
     warnings: unique,
     fields,

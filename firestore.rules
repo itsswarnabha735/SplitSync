@@ -57,7 +57,9 @@ service cloud.firestore {
     }
 
     function isExpenseSourceType(value) {
-      return value in ["statement-import"];
+      return value in [
+        "statement-import", "ai-text", "pasted-message", "receipt-image", "manual"
+      ];
     }
 
     function isStatementParserMode(value) {
@@ -87,6 +89,58 @@ service cloud.firestore {
             request.resource.data.parserConfidence is number
             && request.resource.data.parserConfidence >= 0
             && request.resource.data.parserConfidence <= 1
+          )
+        );
+    }
+
+    function isOptionalStringList(value, maxItems) {
+      return value is list && value.size() <= maxItems;
+    }
+
+    function isOptionalRatio(value) {
+      return value is number && value >= 0 && value <= 1;
+    }
+
+    function isCreatorFieldValid() {
+      return !("createdByUid" in request.resource.data)
+        || isActorUid(request.resource.data.createdByUid)
+        || (
+          "createdByUid" in resource.data
+          && request.resource.data.createdByUid == resource.data.createdByUid
+        );
+    }
+
+    function hasValidExpenseMetadata() {
+      return (
+          !("notes" in request.resource.data)
+          || isString(request.resource.data.notes, 500)
+        )
+        && (
+          !("sourceConfidence" in request.resource.data)
+          || isOptionalRatio(request.resource.data.sourceConfidence)
+        )
+        && (
+          !("sourceWarnings" in request.resource.data)
+          || isOptionalStringList(request.resource.data.sourceWarnings, 10)
+        )
+        && (
+          !("createdAt" in request.resource.data)
+          || isMillis(request.resource.data.createdAt)
+        )
+        && (
+          !("updatedAt" in request.resource.data)
+          || isMillis(request.resource.data.updatedAt)
+        )
+        && (
+          !("lastEditedByUid" in request.resource.data)
+          || isActorUid(request.resource.data.lastEditedByUid)
+        )
+        && (
+          !("editCount" in request.resource.data)
+          || (
+            request.resource.data.editCount is number
+            && request.resource.data.editCount >= 0
+            && request.resource.data.editCount <= 100000
           )
         );
     }
@@ -222,7 +276,9 @@ service cloud.firestore {
           "id", "groupId", "description", "amount", "paidById", "splitType",
           "timestamp", "currency", "splits", "createdByUid", "category",
           "sourceType", "importBatchId", "transactionFingerprint",
-          "parserMode", "parserConfidence"
+          "parserMode", "parserConfidence", "notes", "sourceConfidence",
+          "sourceWarnings", "createdAt", "updatedAt", "lastEditedByUid",
+          "editCount"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -238,14 +294,14 @@ service cloud.firestore {
         && isCurrency(request.resource.data.currency)
         && isSmallStringMap(request.resource.data.splits)
         && (
-          !("createdByUid" in request.resource.data)
-          || isActorUid(request.resource.data.createdByUid)
+          isCreatorFieldValid()
         )
         && (
           !("category" in request.resource.data)
           || isExpenseCategory(request.resource.data.category)
         )
-        && hasValidExpenseImportProvenance();
+        && hasValidExpenseImportProvenance()
+        && hasValidExpenseMetadata();
     }
 
     function isPaymentDoc(groupId, paymentId) {
@@ -301,7 +357,9 @@ service cloud.firestore {
           "timestamp", "currency", "splits", "createdByUid", "category",
           "sourceType", "importBatchId", "transactionFingerprint",
           "parserMode", "parserConfidence", "mirroredFromPath",
-          "mirroredFromUid", "originalId"
+          "mirroredFromUid", "originalId", "notes", "sourceConfidence",
+          "sourceWarnings", "createdAt", "updatedAt", "lastEditedByUid",
+          "editCount"
         ])
         && request.resource.data.keys().hasAll([
           "id", "description", "amount", "paidByFriendId", "splitType",
@@ -316,14 +374,14 @@ service cloud.firestore {
         && isCurrency(request.resource.data.currency)
         && isSmallStringMap(request.resource.data.splits)
         && (
-          !("createdByUid" in request.resource.data)
-          || isActorUid(request.resource.data.createdByUid)
+          isCreatorFieldValid()
         )
         && (
           !("category" in request.resource.data)
           || isExpenseCategory(request.resource.data.category)
         )
         && hasValidExpenseImportProvenance()
+        && hasValidExpenseMetadata()
         && !("mirroredFromPath" in request.resource.data);
     }
 

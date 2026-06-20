@@ -23,7 +23,12 @@ import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 export const YOU_ID = "self" as const;
 
 export type SplitType = "EQUAL" | "EXACT";
-export type ExpenseSourceType = "statement-import";
+export type ExpenseSourceType =
+  | "statement-import"
+  | "ai-text"
+  | "pasted-message"
+  | "receipt-image"
+  | "manual";
 export type StatementParserMode = "ai-assisted" | "local-only";
 
 export interface ExpenseImportProvenance {
@@ -73,6 +78,13 @@ export interface Expense extends ExpenseImportProvenance {
   createdByUid?: string;
   /** Optional recognized category for imported or manually categorized expenses. */
   category?: ExpenseCategorySlug;
+  notes?: string;
+  sourceConfidence?: number;
+  sourceWarnings?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+  lastEditedByUid?: string;
+  editCount?: number;
 }
 
 export interface Payment {
@@ -114,6 +126,13 @@ export interface AdHocExpense extends ExpenseImportProvenance {
   createdByUid?: string;
   /** Optional recognized category for imported or manually categorized expenses. */
   category?: ExpenseCategorySlug;
+  notes?: string;
+  sourceConfidence?: number;
+  sourceWarnings?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+  lastEditedByUid?: string;
+  editCount?: number;
   /** Present on server-created mirror docs in a linked friend's ledger. */
   mirroredFromPath?: string;
   mirroredFromUid?: string;

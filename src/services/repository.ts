@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -63,6 +64,23 @@ export interface NewGroupMember {
   email: string;
   /** uid of the registered SplitSync user, or "" for a name-only placeholder. */
   linkedUid: string;
+}
+
+export interface ExpenseWriteMetadata extends ExpenseImportProvenance {
+  notes?: string;
+  sourceConfidence?: number;
+  sourceWarnings?: string[];
+}
+
+export interface ExpenseUpdatePatch extends ExpenseWriteMetadata {
+  description?: string;
+  amount?: number;
+  paidById?: string;
+  splitType?: SplitType;
+  splits?: SplitPair[];
+  timestamp?: number;
+  currency?: string;
+  category?: ExpenseCategorySlug;
 }
 
 function snapshotError(label: string, onError?: ErrorCb) {
@@ -293,8 +311,9 @@ export function makeRepository(uid: string) {
     timestamp?: number;
     currency?: string;
     category?: ExpenseCategorySlug;
-  }): Promise<void> {
+  } & ExpenseWriteMetadata): Promise<string> {
     const ref = doc(expensesRef(params.groupId));
+    const now = Date.now();
     const expense: Expense = {
       id: ref.id,
       groupId: params.groupId,
@@ -307,8 +326,20 @@ export function makeRepository(uid: string) {
       splits: splitsToMap(params.splits),
       createdByUid: uid,
       category: params.category,
+      notes: params.notes?.trim(),
+      sourceType: params.sourceType,
+      importBatchId: params.importBatchId,
+      transactionFingerprint: params.transactionFingerprint,
+      parserMode: params.parserMode,
+      parserConfidence: params.parserConfidence,
+      sourceConfidence: params.sourceConfidence,
+      sourceWarnings: params.sourceWarnings,
+      createdAt: now,
+      updatedAt: now,
+      editCount: 0,
     };
     await setDoc(ref, withoutUndefined(expense));
+    return ref.id;
   }
 
   async function createExpensesWithSplits(
@@ -322,12 +353,13 @@ export function makeRepository(uid: string) {
       timestamp?: number;
       currency?: string;
       category?: ExpenseCategorySlug;
-    } & ExpenseImportProvenance>
+    } & ExpenseWriteMetadata>
   ): Promise<string[]> {
     const ids: string[] = [];
     const actions = expenses.map((params) => {
       const ref = doc(expensesRef(params.groupId));
       ids.push(ref.id);
+      const now = Date.now();
       const expense: Expense = {
         id: ref.id,
         groupId: params.groupId,
@@ -345,6 +377,12 @@ export function makeRepository(uid: string) {
         transactionFingerprint: params.transactionFingerprint,
         parserMode: params.parserMode,
         parserConfidence: params.parserConfidence,
+        notes: params.notes?.trim(),
+        sourceConfidence: params.sourceConfidence,
+        sourceWarnings: params.sourceWarnings,
+        createdAt: now,
+        updatedAt: now,
+        editCount: 0,
       };
       return (batch: ReturnType<typeof writeBatch>) =>
         batch.set(ref, withoutUndefined(expense));
@@ -356,6 +394,23 @@ export function makeRepository(uid: string) {
   async function deleteExpense(expense: Expense): Promise<void> {
     if (!expense.id || !expense.groupId) return;
     await deleteDoc(doc(expensesRef(expense.groupId), expense.id));
+  }
+
+  async function updateExpense(
+    groupId: string,
+    expenseId: string,
+    patch: ExpenseUpdatePatch
+  ): Promise<void> {
+    if (!groupId || !expenseId) return;
+    const next: Record<string, unknown> = {
+      ...patch,
+      notes: patch.notes?.trim(),
+      splits: patch.splits ? splitsToMap(patch.splits) : undefined,
+      updatedAt: Date.now(),
+      lastEditedByUid: uid,
+      editCount: increment(1),
+    };
+    await updateDoc(doc(expensesRef(groupId), expenseId), withoutUndefined(next));
   }
 
   async function recordPayment(
@@ -610,8 +665,9 @@ export function makeRepository(uid: string) {
     currency?: string;
     timestamp?: number;
     category?: ExpenseCategorySlug;
-  } & ExpenseImportProvenance): Promise<string> {
+  } & ExpenseWriteMetadata): Promise<string> {
     const ref = doc(adhocExpensesRef());
+    const now = Date.now();
     const expense: AdHocExpense = {
       id: ref.id,
       description: params.description.trim(),
@@ -628,6 +684,12 @@ export function makeRepository(uid: string) {
       transactionFingerprint: params.transactionFingerprint,
       parserMode: params.parserMode,
       parserConfidence: params.parserConfidence,
+      notes: params.notes?.trim(),
+      sourceConfidence: params.sourceConfidence,
+      sourceWarnings: params.sourceWarnings,
+      createdAt: now,
+      updatedAt: now,
+      editCount: 0,
     };
     await setDoc(ref, withoutUndefined(expense));
     return ref.id;
@@ -643,12 +705,13 @@ export function makeRepository(uid: string) {
       currency?: string;
       timestamp?: number;
       category?: ExpenseCategorySlug;
-    } & ExpenseImportProvenance>
+    } & ExpenseWriteMetadata>
   ): Promise<string[]> {
     const ids: string[] = [];
     const actions = expenses.map((params) => {
       const ref = doc(adhocExpensesRef());
       ids.push(ref.id);
+      const now = Date.now();
       const expense: AdHocExpense = {
         id: ref.id,
         description: params.description.trim(),
@@ -665,6 +728,12 @@ export function makeRepository(uid: string) {
         transactionFingerprint: params.transactionFingerprint,
         parserMode: params.parserMode,
         parserConfidence: params.parserConfidence,
+        notes: params.notes?.trim(),
+        sourceConfidence: params.sourceConfidence,
+        sourceWarnings: params.sourceWarnings,
+        createdAt: now,
+        updatedAt: now,
+        editCount: 0,
       };
       return (batch: ReturnType<typeof writeBatch>) =>
         batch.set(ref, withoutUndefined(expense));
@@ -676,6 +745,22 @@ export function makeRepository(uid: string) {
   async function deleteAdHocExpense(expense: AdHocExpense): Promise<void> {
     if (!expense.id) return;
     await deleteDoc(doc(adhocExpensesRef(), expense.id));
+  }
+
+  async function updateAdHocExpense(
+    expenseId: string,
+    patch: ExpenseUpdatePatch
+  ): Promise<void> {
+    if (!expenseId) return;
+    const next: Record<string, unknown> = {
+      ...patch,
+      notes: patch.notes?.trim(),
+      splits: patch.splits ? splitsToMap(patch.splits) : undefined,
+      updatedAt: Date.now(),
+      lastEditedByUid: uid,
+      editCount: increment(1),
+    };
+    await updateDoc(doc(adhocExpensesRef(), expenseId), withoutUndefined(next));
   }
 
   async function recordAdHocPayment(
@@ -867,6 +952,7 @@ export function makeRepository(uid: string) {
     createExpenseWithSplits,
     createExpensesWithSplits,
     deleteExpense,
+    updateExpense,
     recordPayment,
     deletePayment,
     deleteGroup,
@@ -880,6 +966,7 @@ export function makeRepository(uid: string) {
     createAdHocExpenseWithSplits,
     createAdHocExpensesWithSplits,
     deleteAdHocExpense,
+    updateAdHocExpense,
     recordAdHocPayment,
     deleteAdHocPayment,
     subscribeInvites,

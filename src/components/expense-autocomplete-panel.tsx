@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 
 import {
@@ -32,6 +32,9 @@ interface ExpenseAutocompletePanelProps {
   onApply: (result: AppliedExpenseAutocomplete) => void;
   placeholder: string;
   className?: string;
+  actionLabel?: string;
+  initialInput?: string;
+  multiline?: boolean;
 }
 
 export function ExpenseAutocompletePanel({
@@ -44,6 +47,9 @@ export function ExpenseAutocompletePanel({
   onApply,
   placeholder,
   className,
+  actionLabel = "Fill with AI",
+  initialInput,
+  multiline = false,
 }: ExpenseAutocompletePanelProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,6 +86,10 @@ export function ExpenseAutocompletePanel({
       supportedCurrencies,
     ]
   );
+
+  useEffect(() => {
+    if (initialInput) setInput(initialInput);
+  }, [initialInput]);
 
   async function handleSubmit(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -138,6 +148,7 @@ export function ExpenseAutocompletePanel({
       const failed: AppliedExpenseAutocomplete = {
         status: "failed",
         draft: {},
+        confidence: {},
         appliedFields: [],
         warnings: [
           {
@@ -159,21 +170,35 @@ export function ExpenseAutocompletePanel({
       <form className="flex flex-col gap-2 sm:flex-row" onSubmit={handleSubmit}>
         <div className="relative min-w-0 flex-1">
           <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" />
-          <Input
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              setError(null);
-            }}
-            className="pl-9"
-            placeholder={placeholder}
-            disabled={loading}
-            aria-label="Smart expense command"
-          />
+          {multiline ? (
+            <textarea
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setError(null);
+              }}
+              className="min-h-28 w-full rounded-xl border border-input bg-card/80 px-9 py-3 text-sm shadow-inner shadow-foreground/[0.02] ring-offset-background transition-colors placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder={placeholder}
+              disabled={loading}
+              aria-label="Smart expense command"
+            />
+          ) : (
+            <Input
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setError(null);
+              }}
+              className="pl-9"
+              placeholder={placeholder}
+              disabled={loading}
+              aria-label="Smart expense command"
+            />
+          )}
         </div>
         <Button type="submit" disabled={loading || !input.trim()}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {loading ? "Filling..." : "Fill with AI"}
+          {loading ? "Filling..." : actionLabel}
         </Button>
       </form>
 

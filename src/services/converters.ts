@@ -16,6 +16,7 @@ import {
   NotificationPreference,
   NotificationType,
   Payment,
+  ExpenseSourceType,
   StatementParserMode,
   SplitType,
 } from "@/lib/models";
@@ -43,8 +44,17 @@ function splitType(v: unknown): SplitType {
 function category(v: unknown) {
   return isExpenseCategorySlug(v) ? v : undefined;
 }
-function sourceType(v: unknown) {
-  return v === "statement-import" ? v : undefined;
+function sourceType(v: unknown): ExpenseSourceType | undefined {
+  const known: ExpenseSourceType[] = [
+    "statement-import",
+    "ai-text",
+    "pasted-message",
+    "receipt-image",
+    "manual",
+  ];
+  return typeof v === "string" && known.includes(v as ExpenseSourceType)
+    ? (v as ExpenseSourceType)
+    : undefined;
 }
 function parserMode(v: unknown): StatementParserMode | undefined {
   return v === "ai-assisted" || v === "local-only" ? v : undefined;
@@ -146,6 +156,14 @@ export function toExpense(d: AnySnap): Expense {
     parserMode: parserMode(data.parserMode),
     parserConfidence:
       typeof data.parserConfidence === "number" ? data.parserConfidence : undefined,
+    notes: str(data.notes) || undefined,
+    sourceConfidence:
+      typeof data.sourceConfidence === "number" ? data.sourceConfidence : undefined,
+    sourceWarnings: stringArray(data.sourceWarnings),
+    createdAt: typeof data.createdAt === "number" ? data.createdAt : undefined,
+    updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
+    lastEditedByUid: str(data.lastEditedByUid) || undefined,
+    editCount: typeof data.editCount === "number" ? data.editCount : undefined,
   };
 }
 
@@ -195,6 +213,14 @@ export function toAdHocExpense(d: AnySnap): AdHocExpense {
     parserMode: parserMode(data.parserMode),
     parserConfidence:
       typeof data.parserConfidence === "number" ? data.parserConfidence : undefined,
+    notes: str(data.notes) || undefined,
+    sourceConfidence:
+      typeof data.sourceConfidence === "number" ? data.sourceConfidence : undefined,
+    sourceWarnings: stringArray(data.sourceWarnings),
+    createdAt: typeof data.createdAt === "number" ? data.createdAt : undefined,
+    updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
+    lastEditedByUid: str(data.lastEditedByUid) || undefined,
+    editCount: typeof data.editCount === "number" ? data.editCount : undefined,
     mirroredFromPath: str(data.mirroredFromPath) || undefined,
     mirroredFromUid: str(data.mirroredFromUid) || undefined,
     originalId: str(data.originalId) || undefined,

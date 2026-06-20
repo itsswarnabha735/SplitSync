@@ -12,7 +12,6 @@ import {
   Plus,
   Receipt,
   Trash2,
-  Upload,
   UserPlus,
 } from "lucide-react";
 
@@ -48,7 +47,6 @@ import {
 } from "@/components/ui/dialog";
 import { InviteMemberDialog } from "@/components/dialogs/invite-member-dialog";
 import { SettleGroupDialog } from "@/components/dialogs/settle-group-dialog";
-import { StatementImportDialog } from "@/components/import/statement-import-dialog";
 import { SettlementCopilotButton } from "@/components/settlement-copilot";
 
 function formatDate(ts: number): string {
@@ -125,7 +123,6 @@ export default function GroupDetailPage({
   } = useGroupDetail(groupId);
 
   const [showInvite, setShowInvite] = useState(false);
-  const [showStatementImport, setShowStatementImport] = useState(false);
   const [settleDebt, setSettleDebt] = useState<DebtOverview | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null
@@ -134,10 +131,6 @@ export default function GroupDetailPage({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const uid = user?.uid;
-  const currentUserMemberId = useMemo(
-    () => members.find((member) => member.linkedUid === uid)?.id ?? "",
-    [members, uid]
-  );
   const labelForMember = useMemo(() => {
     return (m: { name: string; linkedUid: string }) =>
       m.linkedUid && m.linkedUid === uid ? "You" : m.name;
@@ -527,17 +520,7 @@ export default function GroupDetailPage({
       </main>
 
       <div className="fixed inset-x-0 bottom-0 border-t border-border/60 bg-background/85 p-4 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] backdrop-blur-xl">
-        <div className="container grid grid-cols-2 gap-2">
-          <Button
-            className="w-full"
-            size="lg"
-            variant="outline"
-            onClick={() => setShowStatementImport(true)}
-            disabled={members.length === 0}
-          >
-            <Upload className="h-5 w-5" />
-            Import
-          </Button>
+        <div className="container">
           <Button
             className="w-full"
             size="lg"
@@ -558,23 +541,6 @@ export default function GroupDetailPage({
         groupId={groupId}
         debt={settleDebt}
         onClose={() => setSettleDebt(null)}
-      />
-      <StatementImportDialog
-        open={showStatementImport}
-        onOpenChange={setShowStatementImport}
-        target={{
-          kind: "group",
-          groupId,
-          participants: members.map((member) => ({
-            id: member.id,
-            name:
-              member.linkedUid && member.linkedUid === uid
-                ? "You"
-                : member.name,
-          })),
-          defaultPayerId: currentUserMemberId || members[0]?.id || "",
-          existingExpenses: expenses,
-        }}
       />
       <Dialog
         open={!!pendingDelete}

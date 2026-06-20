@@ -72,20 +72,39 @@ function AppToast() {
   if (!toast) return null;
 
   return (
-    <button
-      type="button"
-      className="fixed right-4 top-20 z-50 max-w-sm rounded-xl border border-primary/20 bg-card px-4 py-3 text-left shadow-xl shadow-foreground/10"
-      onClick={() => {
-        if (toast.targetUrl) router.push(toast.targetUrl);
-        clearToast();
-      }}
-    >
+    <div className="fixed right-4 top-20 z-50 max-w-sm rounded-xl border border-primary/20 bg-card px-4 py-3 text-left shadow-xl shadow-foreground/10">
       <p className="text-sm font-black">{toast.title}</p>
       {toast.body && (
         <p className="mt-1 text-xs font-medium text-muted-foreground">
           {toast.body}
         </p>
       )}
-    </button>
+      <div className="mt-2 flex gap-2">
+        {toast.actionLabel && toast.onAction && (
+          <button
+            type="button"
+            className="text-xs font-black text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={async () => {
+              await toast.onAction?.();
+              clearToast();
+            }}
+          >
+            {toast.actionLabel}
+          </button>
+        )}
+        {toast.targetUrl && (
+          <button
+            type="button"
+            className="text-xs font-black text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              router.push(toast.targetUrl!);
+              clearToast();
+            }}
+          >
+            Open
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

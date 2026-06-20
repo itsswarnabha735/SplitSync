@@ -13,12 +13,20 @@ interface UiState {
     title: string;
     body?: string;
     targetUrl?: string;
+    actionLabel?: string;
+    onAction?: () => void | Promise<void>;
   } | null;
   setValidationError: (msg: string | null) => void;
   clearValidationError: () => void;
   setSyncing: (syncing: boolean) => void;
   setStatusMessage: (msg: string | null) => void;
-  showToast: (toast: { title: string; body?: string; targetUrl?: string }) => void;
+  showToast: (toast: {
+    title: string;
+    body?: string;
+    targetUrl?: string;
+    actionLabel?: string;
+    onAction?: () => void | Promise<void>;
+  }) => void;
   clearToast: () => void;
   /** Wraps an async write so the global sync indicator reflects in-flight ops. */
   runSyncing: <T>(
