@@ -20,6 +20,7 @@ import type { DebtOverview, Expense, Payment } from "@/lib/models";
 import { netBalance } from "@/lib/models";
 import { currencySymbol, formatMoney } from "@/lib/currency";
 import { getExpenseCategory } from "@/lib/expense-categories";
+import { buildGroupCopilotContext } from "@/lib/settlement-copilot-context";
 import { useAuth } from "@/hooks/use-auth";
 import { useGroupDetail } from "@/hooks/use-group-detail";
 import { useRepository } from "@/hooks/use-repository";
@@ -48,6 +49,7 @@ import {
 import { InviteMemberDialog } from "@/components/dialogs/invite-member-dialog";
 import { SettleGroupDialog } from "@/components/dialogs/settle-group-dialog";
 import { StatementImportDialog } from "@/components/import/statement-import-dialog";
+import { SettlementCopilotButton } from "@/components/settlement-copilot";
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, {
@@ -147,6 +149,30 @@ export default function GroupDetailPage({
     );
     return (id: string) => map.get(id) ?? "Unknown";
   }, [members, uid]);
+
+  const groupCopilotContext = useMemo(
+    () =>
+      buildGroupCopilotContext({
+        group,
+        members,
+        expenses,
+        payments,
+        balances,
+        simplifiedDebts,
+        settlementError,
+        totalsByCurrency,
+      }),
+    [
+      balances,
+      expenses,
+      group,
+      members,
+      payments,
+      settlementError,
+      simplifiedDebts,
+      totalsByCurrency,
+    ]
+  );
 
   async function confirmDelete() {
     if (!repo || !pendingDelete) return;
@@ -312,12 +338,20 @@ export default function GroupDetailPage({
 
           {/* SETTLE UP */}
           <TabsContent value="settle" className="space-y-4">
-            <div className="space-y-1">
-              <h2 className="text-base font-black">Who owes whom</h2>
-              <p className="text-sm text-muted-foreground">
-                Review each member balance, then record the recommended payments
-                that clear the group.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h2 className="text-base font-black">Who owes whom</h2>
+                <p className="text-sm text-muted-foreground">
+                  Review each member balance, then record the recommended payments
+                  that clear the group.
+                </p>
+              </div>
+              <SettlementCopilotButton
+                contextType="group"
+                context={groupCopilotContext}
+                prompt="Explain recommended payments"
+                buttonVariant="outline"
+              />
             </div>
 
             <div className="space-y-2">

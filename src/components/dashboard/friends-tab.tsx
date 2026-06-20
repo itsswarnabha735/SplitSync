@@ -12,8 +12,14 @@ import {
   Upload,
 } from "lucide-react";
 
-import type { AdHocExpense, Friend, FriendWithBalance } from "@/lib/models";
+import type {
+  AdHocExpense,
+  AdHocPayment,
+  Friend,
+  FriendWithBalance,
+} from "@/lib/models";
 import { formatMoney } from "@/lib/currency";
+import { buildFriendCopilotContext } from "@/lib/settlement-copilot-context";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -24,6 +30,7 @@ import { AddFriendDialog } from "@/components/dialogs/add-friend-dialog";
 import { AddAdHocExpenseDialog } from "@/components/dialogs/add-adhoc-expense-dialog";
 import { SettleAdHocDialog } from "@/components/dialogs/settle-adhoc-dialog";
 import { StatementImportDialog } from "@/components/import/statement-import-dialog";
+import { SettlementCopilotButton } from "@/components/settlement-copilot";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,10 +42,12 @@ export function FriendsTab({
   friends,
   friendsWithBalances,
   adHocExpenses,
+  adHocPayments,
 }: {
   friends: Friend[];
   friendsWithBalances: FriendWithBalance[];
   adHocExpenses: AdHocExpense[];
+  adHocPayments: AdHocPayment[];
 }) {
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
@@ -145,6 +154,22 @@ export function FriendsTab({
               (b) => Math.abs(b.netBalance) > 0.01
             );
             const primary = nonZero[0];
+            const friendExpenses = adHocExpenses.filter(
+              (expense) =>
+                expense.paidByFriendId === friend.id ||
+                friend.id in expense.splits
+            );
+            const friendPayments = adHocPayments.filter(
+              (payment) =>
+                payment.fromFriendId === friend.id ||
+                payment.toFriendId === friend.id
+            );
+            const copilotContext = buildFriendCopilotContext({
+              friend,
+              balances,
+              expenses: friendExpenses,
+              payments: friendPayments,
+            });
             return (
               <Card key={friend.id} className="border-primary/10 p-3">
                 <div className="flex items-center gap-3">
@@ -180,6 +205,13 @@ export function FriendsTab({
                       Settle
                     </Button>
                   )}
+                  <SettlementCopilotButton
+                    contextType="friend"
+                    context={copilotContext}
+                    prompt="Summarize this balance"
+                    label="Ask"
+                    buttonVariant="outline"
+                  />
                   <FriendRowActions
                     friendName={friend.name}
                     deleting={deletingFriendId === friend.id}

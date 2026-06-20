@@ -20,8 +20,10 @@ import {
   type SpendEntrySource,
   type SpendFilters,
 } from "@/lib/spend-analysis";
+import { buildSpendCopilotContext } from "@/lib/settlement-copilot-context";
 import { CurrencyTotals } from "@/components/currency-totals";
 import { EmptyState } from "@/components/empty-state";
+import { SettlementCopilotButton } from "@/components/settlement-copilot";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -79,6 +81,15 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
     () => entries.filter((entry) => entry.origin === "imported").slice(0, 5),
     [entries]
   );
+  const copilotContext = useMemo(
+    () =>
+      buildSpendCopilotContext({
+        entries,
+        filteredEntries: filtered,
+        outstandingNet,
+      }),
+    [entries, filtered, outstandingNet]
+  );
 
   function patch(next: Partial<SpendFilters>) {
     setFilters((current) => ({ ...current, ...next }));
@@ -96,6 +107,15 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <SettlementCopilotButton
+          contextType="spend"
+          context={copilotContext}
+          prompt="Which imported expenses need review?"
+          label="Ask Spend Copilot"
+          buttonVariant="outline"
+        />
+      </div>
       <Card className="space-y-3 border-primary/10 p-4">
         <div className="grid gap-3 md:grid-cols-3">
           <div className="space-y-1.5">

@@ -7,6 +7,7 @@ import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
+import { SettlementCopilotButton } from "@/components/settlement-copilot";
 
 interface AppHeaderProps {
   title: string;
@@ -51,6 +52,10 @@ export function AppHeader({
           )}
         </div>
         <div className="flex items-center gap-1">
+          <SettlementCopilotButton
+            label="Copilot"
+            buttonVariant="outline"
+          />
           <NotificationBell />
           {!onSettingsPage && (
             <Button asChild variant="ghost" size="icon" aria-label="Settings">

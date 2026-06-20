@@ -32,7 +32,7 @@ export default function DashboardPage() {
 
   const { groups } = useGroups();
   const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
-  const { friends, friendsWithBalances, adHocExpenses, groupSlices } =
+  const { friends, friendsWithBalances, adHocExpenses, adHocPayments, groupSlices } =
     useFriends(groupIds);
   const invites = useInvites();
 
@@ -212,6 +212,7 @@ export default function DashboardPage() {
               friends={friends}
               friendsWithBalances={friendsWithBalances}
               adHocExpenses={adHocExpenses}
+              adHocPayments={adHocPayments}
             />
           </TabsContent>
 

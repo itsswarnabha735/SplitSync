@@ -19,6 +19,7 @@ import { dateInputToLocalTimestamp } from "@/lib/dates";
 import type { Friend, StatementParserMode, SplitType } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
 import { buildSplits, type SplitPair } from "@/lib/splits";
+import { buildImportReviewCopilotContext } from "@/lib/settlement-copilot-context";
 import type { StatementParseResult } from "@/lib/statement/types";
 import {
   buildImportBatchId,
@@ -47,6 +48,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SettlementCopilotButton } from "@/components/settlement-copilot";
 import {
   Dialog,
   DialogContent,
@@ -133,6 +135,18 @@ export function StatementImportDialog({
   const selectedTotal = useMemo(
     () => selectedRows.reduce((sum, row) => sum + Math.abs(row.amount), 0),
     [selectedRows]
+  );
+  const importCopilotContext = useMemo(
+    () =>
+      buildImportReviewCopilotContext({
+        title: "Statement import review",
+        targetKind: target.kind,
+        currency,
+        parserMode,
+        selectedTotal,
+        rows,
+      }),
+    [currency, parserMode, rows, selectedTotal, target.kind]
   );
   const allSelectableSelected = useMemo(() => {
     const selectable = rows.filter((row) => row.selectable);
@@ -513,7 +527,7 @@ export function StatementImportDialog({
             </div>
 
             <div className="rounded-2xl border border-border/70">
-              <div className="flex items-center justify-between border-b border-border/70 px-3 py-2 text-sm">
+              <div className="flex flex-col gap-2 border-b border-border/70 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                 <label className="flex items-center gap-2 font-semibold">
                   <Checkbox
                     checked={allSelectableSelected}
@@ -521,9 +535,18 @@ export function StatementImportDialog({
                   />
                   Select expense rows
                 </label>
-                <span className="text-muted-foreground">
-                  Credits and payments are shown for review only.
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">
+                    Credits and payments are shown for review only.
+                  </span>
+                  <SettlementCopilotButton
+                    contextType="import-review"
+                    context={importCopilotContext}
+                    prompt="Find duplicates or suspicious rows"
+                    label="Review with AI"
+                    buttonVariant="outline"
+                  />
+                </div>
               </div>
               <div className="max-h-72 overflow-auto">
                 <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
