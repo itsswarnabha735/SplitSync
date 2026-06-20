@@ -161,6 +161,16 @@ export function canDeleteAdHocPayment(
   );
 }
 
+export function canEditAdHocPayment(
+  payment:
+    | Pick<AdHocPayment, "createdByUid" | "fromFriendId" | "mirroredFromPath">
+    | null
+    | undefined,
+  uid: string | null | undefined
+): boolean {
+  return canDeleteAdHocPayment(payment, uid);
+}
+
 function canEditGroupRow(params: {
   group: Group | null | undefined;
   members: GroupMember[];

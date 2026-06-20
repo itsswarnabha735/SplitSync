@@ -8,6 +8,7 @@ import {
   canDeleteRecurringExpense,
   canDeleteSettlementRequest,
   canEditAdHocExpense,
+  canEditAdHocPayment,
   canEditGroupExpense,
   canEditGroupPayment,
   canEditGroupProfile,
@@ -158,7 +159,25 @@ describe("edit permissions", () => {
     ).toBe(false);
   });
 
-  it("lets ad-hoc settlement creators and payer-side mirrors be deleted", () => {
+  it("lets ad-hoc settlement creators and payer-side mirrors be edited or deleted", () => {
+    expect(
+      canEditAdHocPayment(
+        { createdByUid: "creator-uid", fromFriendId: "friend-uid" },
+        "creator-uid"
+      )
+    ).toBe(true);
+    expect(
+      canEditAdHocPayment(
+        { createdByUid: "creator-uid", fromFriendId: YOU_ID },
+        "payer-uid"
+      )
+    ).toBe(true);
+    expect(
+      canEditAdHocPayment(
+        { createdByUid: "creator-uid", fromFriendId: "friend-uid" },
+        "other-uid"
+      )
+    ).toBe(false);
     expect(
       canDeleteAdHocPayment(
         { createdByUid: "creator-uid", fromFriendId: "friend-uid" },

@@ -240,6 +240,9 @@ export interface AdHocPayment {
   currency: string;
   /** uid of the user who recorded the settlement. */
   createdByUid?: string;
+  updatedAt?: number;
+  lastEditedByUid?: string;
+  editCount?: number;
   /** Present on server-created mirror docs in a linked friend's ledger. */
   mirroredFromPath?: string;
   mirroredFromUid?: string;

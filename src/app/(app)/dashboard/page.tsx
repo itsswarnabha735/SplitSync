@@ -30,7 +30,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupsTab } from "@/components/dashboard/groups-tab";
 import { FriendsTab } from "@/components/dashboard/friends-tab";
 import { SpendTab } from "@/components/dashboard/spend-tab";
-import { ReviewCenter } from "@/components/dashboard/review-center";
 import { EditAdHocExpenseDialog } from "@/components/dialogs/add-adhoc-expense-dialog";
 
 export default function DashboardPage() {
@@ -220,15 +219,6 @@ export default function DashboardPage() {
             />
           </Card>
         </div>
-
-        <ReviewCenter
-          entries={spendEntries}
-          outstandingNet={net}
-          onOpenSpend={() => setActiveTab("spend")}
-          onOpenBalances={() => setActiveTab("groups")}
-          onEditEntry={handleEditSpendEntry}
-          onDeleteEntry={setPendingDeleteEntry}
-        />
 
         {/* Pending invites */}
         {invites.length > 0 && (

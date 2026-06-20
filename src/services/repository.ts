@@ -125,6 +125,14 @@ export interface PaymentUpdatePatch {
   currency?: string;
 }
 
+export interface AdHocPaymentUpdatePatch {
+  fromFriendId?: string;
+  toFriendId?: string;
+  amount?: number;
+  timestamp?: number;
+  currency?: string;
+}
+
 export interface SettlementRequestPatch {
   status?: SettlementRequestStatus;
   message?: string;
@@ -1186,6 +1194,22 @@ export function makeRepository(uid: string) {
     await setDoc(ref, { ...payment, id: ref.id, createdByUid: uid });
   }
 
+  async function updateAdHocPayment(
+    paymentId: string,
+    patch: AdHocPaymentUpdatePatch
+  ): Promise<void> {
+    if (!paymentId) return;
+    await updateDoc(
+      doc(adhocPaymentsRef(), paymentId),
+      withoutUndefined({
+        ...patch,
+        updatedAt: Date.now(),
+        lastEditedByUid: uid,
+        editCount: increment(1),
+      })
+    );
+  }
+
   async function deleteAdHocPayment(payment: AdHocPayment): Promise<void> {
     if (!payment.id) return;
     await deleteDoc(doc(adhocPaymentsRef(), payment.id));
@@ -1400,6 +1424,7 @@ export function makeRepository(uid: string) {
     deleteAdHocExpense,
     updateAdHocExpense,
     recordAdHocPayment,
+    updateAdHocPayment,
     deleteAdHocPayment,
     subscribeInvites,
     inviteToGroupByEmail,
