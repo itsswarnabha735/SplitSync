@@ -27,11 +27,10 @@ export function deriveDashboardBalanceTotals(params: {
   uid: string | null;
 }): DashboardBalanceTotals {
   const { slices, friendsWithBalances, friends, uid } = params;
-  const youAreOwed: CurrencyTotals = {};
-  const youOwe: CurrencyTotals = {};
+  const signedNet: CurrencyTotals = {};
 
   for (const f of friendsWithBalances) {
-    addSignedBalance(youAreOwed, youOwe, f.currency, f.netBalance);
+    addNet(signedNet, f.currency, f.netBalance);
   }
 
   if (uid) {
@@ -57,13 +56,12 @@ export function deriveDashboardBalanceTotals(params: {
         if (expense.paidById === youMember.id) {
           for (const [memberId, share] of Object.entries(expense.splits)) {
             if (isUnlinkedCounterparty(memberId)) {
-              addSignedBalance(youAreOwed, youOwe, expense.currency, share);
+              addNet(signedNet, expense.currency, share);
             }
           }
         } else if (isUnlinkedCounterparty(expense.paidById)) {
-          addSignedBalance(
-            youAreOwed,
-            youOwe,
+          addNet(
+            signedNet,
             expense.currency,
             -(expense.splits[youMember.id] ?? 0)
           );
@@ -75,39 +73,36 @@ export function deriveDashboardBalanceTotals(params: {
           payment.fromMemberId === youMember.id &&
           isUnlinkedCounterparty(payment.toMemberId)
         ) {
-          addSignedBalance(youAreOwed, youOwe, payment.currency, payment.amount);
+          addNet(signedNet, payment.currency, payment.amount);
         } else if (
           payment.toMemberId === youMember.id &&
           isUnlinkedCounterparty(payment.fromMemberId)
         ) {
-          addSignedBalance(
-            youAreOwed,
-            youOwe,
-            payment.currency,
-            -payment.amount
-          );
+          addNet(signedNet, payment.currency, -payment.amount);
         }
       }
     }
   }
 
+  const youAreOwed: CurrencyTotals = {};
+  const youOwe: CurrencyTotals = {};
   const net: CurrencyTotals = {};
-  for (const cur of new Set([...Object.keys(youAreOwed), ...Object.keys(youOwe)])) {
-    net[cur] = (youAreOwed[cur] ?? 0) - (youOwe[cur] ?? 0);
+  for (const [cur, amount] of Object.entries(signedNet)) {
+    net[cur] = amount;
+    if (amount > 0) {
+      youAreOwed[cur] = amount;
+    } else if (amount < 0) {
+      youOwe[cur] = -amount;
+    }
   }
 
   return { youAreOwed, youOwe, net };
 }
 
-function addSignedBalance(
-  owed: CurrencyTotals,
-  owe: CurrencyTotals,
+function addNet(
+  totals: CurrencyTotals,
   currency: string,
   amount: number
 ) {
-  if (amount > 0) {
-    owed[currency] = (owed[currency] ?? 0) + amount;
-  } else if (amount < 0) {
-    owe[currency] = (owe[currency] ?? 0) + -amount;
-  }
+  totals[currency] = (totals[currency] ?? 0) + amount;
 }

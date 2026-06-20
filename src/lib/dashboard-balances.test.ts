@@ -74,4 +74,48 @@ describe("deriveDashboardBalanceTotals", () => {
     expect(result.youOwe.USD).toBeUndefined();
     expect(result.net.USD).toBe(40);
   });
+
+  it("nets group settlements before deriving owed and owe dashboard totals", () => {
+    const result = deriveDashboardBalanceTotals({
+      uid: "you-uid",
+      friends: [],
+      friendsWithBalances: [],
+      slices: {
+        g1: {
+          members,
+          expenses: [
+            {
+              id: "e1",
+              groupId: "g1",
+              description: "Taxi",
+              amount: 40,
+              paidById: "unlinked-member",
+              splitType: "EQUAL",
+              timestamp: 1,
+              currency: "USD",
+              splits: {
+                "you-member": 20,
+                "unlinked-member": 20,
+              },
+            },
+          ],
+          payments: [
+            {
+              id: "p1",
+              groupId: "g1",
+              fromMemberId: "you-member",
+              toMemberId: "unlinked-member",
+              amount: 20,
+              timestamp: 2,
+              currency: "USD",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result.youAreOwed.USD).toBeUndefined();
+    expect(result.youOwe.USD).toBeUndefined();
+    expect(result.net.USD).toBe(0);
+  });
 });

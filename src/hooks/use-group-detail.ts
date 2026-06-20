@@ -9,7 +9,10 @@ import type {
   Payment,
 } from "@/lib/models";
 import { calculateGroupBalances } from "@/lib/balances";
-import { simplifyDebts } from "@/lib/debt-simplifier";
+import {
+  DebtSimplificationError,
+  simplifyDebts,
+} from "@/lib/debt-simplifier";
 import { useRepository } from "@/hooks/use-repository";
 
 /**
@@ -96,10 +99,19 @@ export function useGroupDetail(groupId: string | null) {
     [members, expenses, payments]
   );
 
-  const simplifiedDebts = useMemo(
-    () => simplifyDebts(balances),
-    [balances]
-  );
+  const debtState = useMemo(() => {
+    try {
+      return {
+        simplifiedDebts: simplifyDebts(balances),
+        settlementError: null,
+      };
+    } catch (err) {
+      if (err instanceof DebtSimplificationError) {
+        return { simplifiedDebts: [], settlementError: err.message };
+      }
+      throw err;
+    }
+  }, [balances]);
 
   const totalsByCurrency = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -115,7 +127,8 @@ export function useGroupDetail(groupId: string | null) {
     expenses,
     payments,
     balances,
-    simplifiedDebts,
+    simplifiedDebts: debtState.simplifiedDebts,
+    settlementError: debtState.settlementError,
     totalsByCurrency,
     loading,
     error,

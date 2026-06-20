@@ -3,6 +3,7 @@
 import { use, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowRight,
   BookOpen,
   CheckCircle2,
@@ -115,6 +116,7 @@ export default function GroupDetailPage({
     payments,
     balances,
     simplifiedDebts,
+    settlementError,
     totalsByCurrency,
     loading,
     error,
@@ -388,7 +390,15 @@ export default function GroupDetailPage({
               <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
                 Recommended payments
               </p>
-              {simplifiedDebts.length === 0 ? (
+              {settlementError ? (
+                <div
+                  className="flex items-start gap-2 rounded-2xl border border-destructive/15 bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+                  role="alert"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{settlementError}</p>
+                </div>
+              ) : simplifiedDebts.length === 0 ? (
                 <EmptyState
                   icon={CheckCircle2}
                   title="All settled up"
@@ -399,8 +409,7 @@ export default function GroupDetailPage({
                   <div className="flex items-start gap-2 rounded-2xl border border-primary/15 bg-primary/10 p-3 text-sm text-primary">
                     <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
                     <p className="font-semibold">
-                      These payments minimize the number of transfers needed to
-                      clear the group.
+                      Record these payments to clear the group.
                     </p>
                   </div>
                   {simplifiedDebts.map((d, i) => (

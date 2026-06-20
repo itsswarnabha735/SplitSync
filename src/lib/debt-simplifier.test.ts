@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { simplifyDebts } from "./debt-simplifier";
+import {
+  DebtSimplificationError,
+  simplifyDebts,
+} from "./debt-simplifier";
 import { GroupMember, MemberBalanceInfo } from "./models";
 
 function member(id: string, name: string): GroupMember {
@@ -22,6 +25,30 @@ function balance(
   };
 }
 
+function balanceFromNet(
+  m: GroupMember,
+  net: number,
+  currency = "USD"
+): MemberBalanceInfo {
+  return net >= 0
+    ? balance(m, net, 0, currency)
+    : balance(m, 0, -net, currency);
+}
+
+function applyTransactions(
+  startingNet: Record<string, number>,
+  result: ReturnType<typeof simplifyDebts>
+) {
+  const next = { ...startingNet };
+  for (const transaction of result) {
+    next[transaction.debtor.id] =
+      (next[transaction.debtor.id] ?? 0) + transaction.amount;
+    next[transaction.creditor.id] =
+      (next[transaction.creditor.id] ?? 0) - transaction.amount;
+  }
+  return next;
+}
+
 describe("simplifyDebts", () => {
   it("returns no transactions when everyone is settled", () => {
     const a = member("a", "A");
@@ -42,7 +69,7 @@ describe("simplifyDebts", () => {
     expect(result[0].currency).toBe("USD");
   });
 
-  it("greedily matches the largest debtor with the largest creditor", () => {
+  it("settles one debtor across multiple creditors", () => {
     const a = member("a", "A"); // +60
     const b = member("b", "B"); // +30
     const c = member("c", "C"); // -90
@@ -56,6 +83,28 @@ describe("simplifyDebts", () => {
     const total = result.reduce((s, t) => s + t.amount, 0);
     expect(total).toBeCloseTo(90, 2);
     expect(result.every((t) => t.debtor.id === "c")).toBe(true);
+  });
+
+  it("minimizes transfers when greedy matching is not optimal", () => {
+    const a = member("a", "A"); // +6
+    const b = member("b", "B"); // +4
+    const c = member("c", "C"); // -4
+    const d = member("d", "D"); // -3
+    const e = member("e", "E"); // -3
+    const startingNet = { a: 6, b: 4, c: -4, d: -3, e: -3 };
+
+    const result = simplifyDebts([
+      balanceFromNet(a, startingNet.a),
+      balanceFromNet(b, startingNet.b),
+      balanceFromNet(c, startingNet.c),
+      balanceFromNet(d, startingNet.d),
+      balanceFromNet(e, startingNet.e),
+    ]);
+
+    expect(result).toHaveLength(3);
+    expect(Object.values(applyTransactions(startingNet, result))).toEqual([
+      0, 0, 0, 0, 0,
+    ]);
   });
 
   it("keeps currencies separate", () => {
@@ -82,5 +131,14 @@ describe("simplifyDebts", () => {
       balance(b, 100, 100.004),
     ]);
     expect(result).toEqual([]);
+  });
+
+  it("throws when a currency bucket does not conserve value", () => {
+    const a = member("a", "A");
+    const b = member("b", "B");
+
+    expect(() =>
+      simplifyDebts([balanceFromNet(a, 10), balanceFromNet(b, -4)])
+    ).toThrow(DebtSimplificationError);
   });
 });
