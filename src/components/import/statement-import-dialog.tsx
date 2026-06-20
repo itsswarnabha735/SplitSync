@@ -12,17 +12,22 @@ import {
 import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 import {
   EXPENSE_CATEGORIES,
+  getExpenseCategoryKind,
 } from "@/lib/expense-categories";
 import { formatMoney, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { dateInputToLocalTimestamp } from "@/lib/dates";
-import type { Friend, SplitType } from "@/lib/models";
+import type { Friend, StatementParserMode, SplitType } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
 import { buildSplits, type SplitPair } from "@/lib/splits";
 import type { StatementParseResult } from "@/lib/statement/types";
 import {
+  buildImportBatchId,
+  buildImportProvenance,
   distributeBySharedExactShares,
+  type ExistingImportedExpenseLike,
   toStatementImportRow,
   type StatementImportRow,
+  type StatementImportWarningFlag,
 } from "@/lib/statement/import-adapter";
 import {
   extractStatementText,
@@ -58,10 +63,12 @@ type ImportTarget =
       groupId: string;
       participants: Participant[];
       defaultPayerId: string;
+      existingExpenses: ExistingImportedExpenseLike[];
     }
   | {
       kind: "friend";
       friends: Friend[];
+      existingExpenses: ExistingImportedExpenseLike[];
     };
 
 interface StatementImportDialogProps {
@@ -89,6 +96,8 @@ export function StatementImportDialog({
   const [rows, setRows] = useState<StatementImportRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [parserMode, setParserMode] =
+    useState<StatementParserMode>("ai-assisted");
 
   const [selectedFriendId, setSelectedFriendId] = useState("");
   const selectedFriend = useMemo(
@@ -177,15 +186,24 @@ export function StatementImportDialog({
       const extracted = await extractStatementText(file, setProgress);
       const parsed = await parseStatementWithLLMFallback(extracted.rawText, {
         minConfidence: 0.3,
+        regexOnly: parserMode === "local-only",
+        forceLLM: parserMode === "ai-assisted",
       });
-      const nextRows = parsed.transactions.map(toStatementImportRow);
+      const parsedCurrency = normalizeCurrency(parsed.currency);
+      const nextRows = parsed.transactions.map((tx) =>
+        toStatementImportRow(tx, {
+          currency: parsedCurrency,
+          existingExpenses: target.existingExpenses,
+          statementPeriod: parsed.statementPeriod,
+        })
+      );
       if (nextRows.length === 0) {
         throw new Error("No transactions were recognized in this statement.");
       }
 
       setResult(parsed);
       setRows(nextRows);
-      setCurrency(normalizeCurrency(parsed.currency));
+      setCurrency(parsedCurrency);
       setStage("review");
     } catch (err) {
       setError(
@@ -206,6 +224,24 @@ export function StatementImportDialog({
   function updateRow(id: string, patch: Partial<StatementImportRow>) {
     setRows((current) =>
       current.map((row) => (row.id === id ? { ...row, ...patch } : row))
+    );
+    setError(null);
+  }
+
+  function updateRowCategory(id: string, nextCategory: ExpenseCategorySlug) {
+    setRows((current) =>
+      current.map((row) => {
+        if (row.id !== id) return row;
+        const nextFlags = mergeCategoryWarningFlags(
+          row.warningFlags,
+          getExpenseCategoryKind(nextCategory) !== "spend"
+        );
+        return {
+          ...row,
+          category: nextCategory,
+          warningFlags: nextFlags,
+        };
+      })
     );
     setError(null);
   }
@@ -273,6 +309,7 @@ export function StatementImportDialog({
 
     setSaving(true);
     try {
+      const batchId = buildImportBatchId();
       await runSyncing(
         async () => {
           if (target.kind === "group") {
@@ -287,6 +324,7 @@ export function StatementImportDialog({
                 timestamp: dateInputToLocalTimestamp(row.date) ?? Date.now(),
                 currency,
                 category: row.category,
+                ...buildImportProvenance({ batchId, parserMode, row }),
               }))
             );
           } else {
@@ -300,6 +338,7 @@ export function StatementImportDialog({
                 timestamp: dateInputToLocalTimestamp(row.date) ?? Date.now(),
                 currency,
                 category: row.category,
+                ...buildImportProvenance({ batchId, parserMode, row }),
               }))
             );
           }
@@ -364,6 +403,22 @@ export function StatementImportDialog({
                 }}
               />
             </label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ParserModeOption
+                mode="ai-assisted"
+                active={parserMode === "ai-assisted"}
+                title="AI-assisted"
+                description="Uses local extraction, then sends masked statement text to Gemini for better recognition."
+                onClick={() => setParserMode("ai-assisted")}
+              />
+              <ParserModeOption
+                mode="local-only"
+                active={parserMode === "local-only"}
+                title="Local only"
+                description="Uses only in-browser extraction and pattern matching. No statement text is sent to AI."
+                onClick={() => setParserMode("local-only")}
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
@@ -389,6 +444,11 @@ export function StatementImportDialog({
         {stage === "review" && result && (
           <div className="space-y-4">
             <StatementSummary result={result} selectedTotal={selectedTotal} />
+            <div className="rounded-2xl border border-primary/15 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary">
+              The selected payer and split pattern apply to every selected row.
+              Create separate imports when rows need different payers or
+              participants.
+            </div>
 
             {target.kind === "friend" && (
               <div className="space-y-1.5">
@@ -519,14 +579,16 @@ export function StatementImportDialog({
                               {row.type} row
                             </p>
                           )}
+                          <WarningBadges flags={row.warningFlags} />
                         </td>
                         <td className="min-w-44 border-b border-border/70 px-3 py-3 align-top">
                           <NativeSelect
                             value={row.category}
                             onChange={(event) =>
-                              updateRow(row.id, {
-                                category: event.target.value as ExpenseCategorySlug,
-                              })
+                              updateRowCategory(
+                                row.id,
+                                event.target.value as ExpenseCategorySlug
+                              )
                             }
                           >
                             {EXPENSE_CATEGORIES.map((category) => (
@@ -586,6 +648,69 @@ export function StatementImportDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function ParserModeOption({
+  mode,
+  active,
+  title,
+  description,
+  onClick,
+}: {
+  mode: StatementParserMode;
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+        active
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border/70 bg-card hover:bg-accent"
+      }`}
+    >
+      <span className="block text-sm font-black">{title}</span>
+      <span className="mt-1 block text-xs text-muted-foreground">
+        {description}
+      </span>
+      <span className="sr-only">{mode}</span>
+    </button>
+  );
+}
+
+function WarningBadges({ flags }: { flags: StatementImportWarningFlag[] }) {
+  if (flags.length === 0) return null;
+  const labels: Record<StatementImportWarningFlag, string> = {
+    "duplicate-like": "Possible duplicate",
+    "low-confidence": "Low confidence",
+    "money-movement": "Money movement",
+    "out-of-period": "Date outside period",
+  };
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {flags.map((flag) => (
+        <Badge key={flag} variant="outline" className="text-[10px]">
+          {labels[flag]}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function mergeCategoryWarningFlags(
+  flags: StatementImportWarningFlag[],
+  isMoneyMovement: boolean
+): StatementImportWarningFlag[] {
+  const next: StatementImportWarningFlag[] = flags.filter(
+    (flag) => flag !== "money-movement"
+  );
+  if (isMoneyMovement) next.push("money-movement");
+  return next;
 }
 
 function StatementSummary({

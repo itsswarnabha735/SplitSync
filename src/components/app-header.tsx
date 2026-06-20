@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
@@ -22,6 +24,9 @@ export function AppHeader({
   actions,
 }: AppHeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const onSettingsPage = pathname === "/settings";
+
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 shadow-sm shadow-foreground/[0.03] backdrop-blur-xl">
       <div className="container flex h-16 items-center gap-3">
@@ -47,6 +52,13 @@ export function AppHeader({
         </div>
         <div className="flex items-center gap-1">
           <NotificationBell />
+          {!onSettingsPage && (
+            <Button asChild variant="ghost" size="icon" aria-label="Settings">
+              <Link href="/settings">
+                <SettingsIcon className="h-5 w-5" />
+              </Link>
+            </Button>
+          )}
           {actions}
         </div>
       </div>

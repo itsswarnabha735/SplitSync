@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { Friend, SplitType } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
+import type { ExpenseCategorySlug } from "@/lib/expense-categories";
+import {
+  EXPENSE_CATEGORIES,
+  suggestExpenseCategory,
+} from "@/lib/expense-categories";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { dateInputToLocalTimestamp, toDateInputValue } from "@/lib/dates";
 import { buildSplits } from "@/lib/splits";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
@@ -58,6 +64,9 @@ export function AddAdHocExpenseDialog({
   const [amountStr, setAmountStr] = useState("");
   const [paidBy, setPaidBy] = useState<string>(YOU_ID);
   const [currency, setCurrency] = useState("USD");
+  const [dateStr, setDateStr] = useState(() => toDateInputValue());
+  const [category, setCategory] = useState<ExpenseCategorySlug>("other");
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [splitType, setSplitType] = useState<SplitType>("EQUAL");
   const [split, setSplit] = useState<SplitState>(() =>
     emptySplitState(participants)
@@ -66,6 +75,10 @@ export function AddAdHocExpenseDialog({
   const [saving, setSaving] = useState(false);
 
   const amount = parseFloat(amountStr) || 0;
+  const suggestedCategory = useMemo(
+    () => suggestExpenseCategory(description)?.categorySlug ?? "other",
+    [description]
+  );
 
   useEffect(() => {
     if (!selectedFriend) return;
@@ -78,12 +91,21 @@ export function AddAdHocExpenseDialog({
     setSplit(emptySplitState(participants));
   }, [participants, selectedFriend, selectedFriendId]);
 
+  useEffect(() => {
+    if (!categoryTouched) {
+      setCategory(suggestedCategory);
+    }
+  }, [categoryTouched, suggestedCategory]);
+
   function reset() {
     setDescription("");
     setAmountStr("");
     setSelectedFriendId(friends[0]?.id ?? "");
     setPaidBy(YOU_ID);
     setCurrency("USD");
+    setDateStr(toDateInputValue());
+    setCategory("other");
+    setCategoryTouched(false);
     setSplitType("EQUAL");
     setSplit(emptySplitState(participants));
     setError(null);
@@ -136,6 +158,8 @@ export function AddAdHocExpenseDialog({
             splitType,
             splits: result.splits,
             currency,
+            timestamp: dateInputToLocalTimestamp(dateStr) ?? Date.now(),
+            category,
           }),
         {
           loading: "Saving expense...",
@@ -213,6 +237,35 @@ export function AddAdHocExpenseDialog({
                 {SUPPORTED_CURRENCIES.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="adhoc-date">Date</Label>
+              <Input
+                id="adhoc-date"
+                type="date"
+                value={dateStr}
+                onChange={(e) => setDateStr(e.target.value)}
+              />
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="adhoc-category">Category</Label>
+              <NativeSelect
+                id="adhoc-category"
+                value={category}
+                onChange={(e) => {
+                  setCategory(e.target.value as ExpenseCategorySlug);
+                  setCategoryTouched(true);
+                }}
+              >
+                {EXPENSE_CATEGORIES.map((item) => (
+                  <option key={item.slug} value={item.slug}>
+                    {item.name}
                   </option>
                 ))}
               </NativeSelect>

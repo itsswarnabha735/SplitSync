@@ -16,6 +16,7 @@ import {
   NotificationPreference,
   NotificationType,
   Payment,
+  StatementParserMode,
   SplitType,
 } from "@/lib/models";
 import { isExpenseCategorySlug } from "@/lib/expense-categories";
@@ -41,6 +42,12 @@ function splitType(v: unknown): SplitType {
 }
 function category(v: unknown) {
   return isExpenseCategorySlug(v) ? v : undefined;
+}
+function sourceType(v: unknown) {
+  return v === "statement-import" ? v : undefined;
+}
+function parserMode(v: unknown): StatementParserMode | undefined {
+  return v === "ai-assisted" || v === "local-only" ? v : undefined;
 }
 function notificationType(v: unknown): NotificationType {
   const known: NotificationType[] = [
@@ -133,6 +140,12 @@ export function toExpense(d: AnySnap): Expense {
     splits: splitMap(data.splits),
     createdByUid: str(data.createdByUid) || undefined,
     category: category(data.category),
+    sourceType: sourceType(data.sourceType),
+    importBatchId: str(data.importBatchId) || undefined,
+    transactionFingerprint: str(data.transactionFingerprint) || undefined,
+    parserMode: parserMode(data.parserMode),
+    parserConfidence:
+      typeof data.parserConfidence === "number" ? data.parserConfidence : undefined,
   };
 }
 
@@ -176,6 +189,12 @@ export function toAdHocExpense(d: AnySnap): AdHocExpense {
     splits: splitMap(data.splits),
     createdByUid: str(data.createdByUid) || undefined,
     category: category(data.category),
+    sourceType: sourceType(data.sourceType),
+    importBatchId: str(data.importBatchId) || undefined,
+    transactionFingerprint: str(data.transactionFingerprint) || undefined,
+    parserMode: parserMode(data.parserMode),
+    parserConfidence:
+      typeof data.parserConfidence === "number" ? data.parserConfidence : undefined,
     mirroredFromPath: str(data.mirroredFromPath) || undefined,
     mirroredFromUid: str(data.mirroredFromUid) || undefined,
     originalId: str(data.originalId) || undefined,

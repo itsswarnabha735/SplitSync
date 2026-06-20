@@ -530,6 +530,7 @@ export default function GroupDetailPage({
                 : member.name,
           })),
           defaultPayerId: currentUserMemberId || members[0]?.id || "",
+          existingExpenses: expenses,
         }}
       />
       <Dialog

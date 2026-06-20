@@ -2,6 +2,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "food-dining",
     name: "Food & Dining",
+    kind: "spend",
     color: "#f59e0b",
     keywords: [
       "restaurant",
@@ -24,6 +25,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "groceries",
     name: "Groceries",
+    kind: "spend",
     color: "#22c55e",
     keywords: [
       "grocery",
@@ -42,6 +44,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "transport",
     name: "Transport",
+    kind: "spend",
     color: "#38bdf8",
     keywords: [
       "uber",
@@ -60,6 +63,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "fuel",
     name: "Fuel",
+    kind: "spend",
     color: "#64748b",
     keywords: ["shell", "bp", "exxon", "petrol", "diesel", "fuel", "gas station", "hpcl", "iocl", "bharat petroleum"],
     llmGuideline: "Petrol, diesel, charging, and gas station purchases.",
@@ -67,6 +71,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "shopping",
     name: "Shopping",
+    kind: "spend",
     color: "#a855f7",
     keywords: ["amazon", "flipkart", "myntra", "target", "store", "shop", "retail", "apple.com", "reliance digital"],
     llmGuideline: "Retail purchases, ecommerce, clothing, electronics, and general shopping.",
@@ -74,6 +79,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "entertainment",
     name: "Entertainment",
+    kind: "spend",
     color: "#ec4899",
     keywords: ["netflix", "spotify", "bookmyshow", "movie", "cinema", "prime video", "hotstar", "viacom", "concert"],
     llmGuideline: "Movies, events, music, streaming, games, and leisure.",
@@ -81,6 +87,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "utilities",
     name: "Utilities",
+    kind: "spend",
     color: "#06b6d4",
     keywords: ["electric", "water", "gas bill", "airtel", "jio", "vodafone", "phone", "internet", "broadband", "recharge"],
     llmGuideline: "Electricity, water, phone, internet, recharges, and household bills.",
@@ -88,6 +95,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "travel",
     name: "Travel",
+    kind: "spend",
     color: "#14b8a6",
     keywords: ["makemytrip", "airbnb", "hotel", "flight", "airline", "indigo", "vistara", "irctc", "booking.com", "travel"],
     llmGuideline: "Flights, hotels, train tickets, stays, and travel bookings.",
@@ -95,6 +103,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "health",
     name: "Health",
+    kind: "spend",
     color: "#ef4444",
     keywords: ["pharmacy", "medical", "hospital", "clinic", "doctor", "apollo", "cvs", "health", "medicine"],
     llmGuideline: "Pharmacy, medical care, doctors, hospitals, insurance health claims.",
@@ -102,6 +111,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "housing",
     name: "Housing",
+    kind: "spend",
     color: "#8b5cf6",
     keywords: ["rent", "maintenance", "housing", "society", "lease", "mortgage"],
     llmGuideline: "Rent, housing maintenance, mortgage, society charges, and home services.",
@@ -109,6 +119,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "investments",
     name: "Investments",
+    kind: "spend",
     color: "#10b981",
     keywords: ["groww", "zerodha", "upstox", "mutual fund", "sip", "nse", "bse", "investment", "clearing corp"],
     llmGuideline: "Brokerage, SIPs, mutual funds, stocks, and investment transfers.",
@@ -116,6 +127,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "fees",
     name: "Fees",
+    kind: "spend",
     color: "#f97316",
     keywords: ["fee", "charge", "penalty", "interest", "annual fee", "late fee", "finance charge"],
     llmGuideline: "Bank fees, card fees, late fees, penalties, and finance charges.",
@@ -123,6 +135,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "income",
     name: "Income",
+    kind: "income",
     color: "#16a34a",
     keywords: ["salary", "payroll", "income", "dividend", "interest earned", "neft"],
     llmGuideline: "Salary, payroll, dividends, incoming deposits, and interest income.",
@@ -130,6 +143,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "transfers",
     name: "Transfers",
+    kind: "money-movement",
     color: "#6b7280",
     keywords: ["transfer", "upi", "neft", "imps", "rtgs", "payment received", "refund"],
     llmGuideline: "Transfers, repayments, refunds, and money movement that is not spending.",
@@ -137,6 +151,7 @@ export const EXPENSE_CATEGORIES = [
   {
     slug: "other",
     name: "Other",
+    kind: "spend",
     color: "#71717a",
     keywords: [],
     llmGuideline: "Use only when no more specific category fits.",
@@ -144,10 +159,12 @@ export const EXPENSE_CATEGORIES = [
 ] as const;
 
 export type ExpenseCategorySlug = (typeof EXPENSE_CATEGORIES)[number]["slug"];
+export type ExpenseCategoryKind = (typeof EXPENSE_CATEGORIES)[number]["kind"];
 
 export interface ExpenseCategory {
   slug: ExpenseCategorySlug;
   name: string;
+  kind: ExpenseCategoryKind;
   color: string;
 }
 
@@ -190,8 +207,16 @@ export function getExpenseCategory(slug: string | null | undefined) {
   return slug ? CATEGORY_BY_SLUG.get(slug as ExpenseCategorySlug) ?? null : null;
 }
 
+export function getExpenseCategoryKind(slug: string | null | undefined) {
+  return getExpenseCategory(slug)?.kind ?? "spend";
+}
+
 export function isExpenseCategorySlug(value: unknown): value is ExpenseCategorySlug {
   return typeof value === "string" && CATEGORY_BY_SLUG.has(value as ExpenseCategorySlug);
+}
+
+export function isSpendCategorySlug(value: string | null | undefined): boolean {
+  return getExpenseCategoryKind(value) === "spend";
 }
 
 export function resolveExpenseCategorySlug(

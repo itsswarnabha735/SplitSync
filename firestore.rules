@@ -56,6 +56,41 @@ service cloud.firestore {
       ];
     }
 
+    function isExpenseSourceType(value) {
+      return value in ["statement-import"];
+    }
+
+    function isStatementParserMode(value) {
+      return value in ["ai-assisted", "local-only"];
+    }
+
+    function hasValidExpenseImportProvenance() {
+      return (
+          !("sourceType" in request.resource.data)
+          || isExpenseSourceType(request.resource.data.sourceType)
+        )
+        && (
+          !("importBatchId" in request.resource.data)
+          || isNonEmptyString(request.resource.data.importBatchId, 80)
+        )
+        && (
+          !("transactionFingerprint" in request.resource.data)
+          || isNonEmptyString(request.resource.data.transactionFingerprint, 160)
+        )
+        && (
+          !("parserMode" in request.resource.data)
+          || isStatementParserMode(request.resource.data.parserMode)
+        )
+        && (
+          !("parserConfidence" in request.resource.data)
+          || (
+            request.resource.data.parserConfidence is number
+            && request.resource.data.parserConfidence >= 0
+            && request.resource.data.parserConfidence <= 1
+          )
+        );
+    }
+
     function isSmallStringMap(value) {
       return value is map && value.keys().size() > 0 && value.keys().size() <= 100;
     }
@@ -185,7 +220,9 @@ service cloud.firestore {
     function isExpenseDoc(groupId, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "groupId", "description", "amount", "paidById", "splitType",
-          "timestamp", "currency", "splits", "createdByUid", "category"
+          "timestamp", "currency", "splits", "createdByUid", "category",
+          "sourceType", "importBatchId", "transactionFingerprint",
+          "parserMode", "parserConfidence"
         ])
         && request.resource.data.keys().hasAll([
           "id", "groupId", "description", "amount", "paidById", "splitType",
@@ -207,7 +244,8 @@ service cloud.firestore {
         && (
           !("category" in request.resource.data)
           || isExpenseCategory(request.resource.data.category)
-        );
+        )
+        && hasValidExpenseImportProvenance();
     }
 
     function isPaymentDoc(groupId, paymentId) {
@@ -260,7 +298,9 @@ service cloud.firestore {
     function isAdHocExpenseDoc(uid, expenseId) {
       return request.resource.data.keys().hasOnly([
           "id", "description", "amount", "paidByFriendId", "splitType",
-          "timestamp", "currency", "splits", "createdByUid", "category", "mirroredFromPath",
+          "timestamp", "currency", "splits", "createdByUid", "category",
+          "sourceType", "importBatchId", "transactionFingerprint",
+          "parserMode", "parserConfidence", "mirroredFromPath",
           "mirroredFromUid", "originalId"
         ])
         && request.resource.data.keys().hasAll([
@@ -283,6 +323,7 @@ service cloud.firestore {
           !("category" in request.resource.data)
           || isExpenseCategory(request.resource.data.category)
         )
+        && hasValidExpenseImportProvenance()
         && !("mirroredFromPath" in request.resource.data);
     }
 

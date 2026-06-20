@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTransactionFingerprint,
+  isDuplicateLikeImportRow,
   distributeBySharedExactShares,
   toStatementImportRow,
 } from "./import-adapter";
@@ -41,6 +43,19 @@ describe("statement import adapter", () => {
     ).toBe(false);
   });
 
+  it("leaves income and transfers unselected by default", () => {
+    expect(
+      toStatementImportRow(
+        tx({ type: "debit", amount: 100, suggestedCategoryName: "Transfers" })
+      ).selected
+    ).toBe(false);
+    expect(
+      toStatementImportRow(
+        tx({ type: "credit", amount: -100, suggestedCategoryName: "Income" })
+      ).selected
+    ).toBe(false);
+  });
+
   it("resolves suggested category names to persisted slugs", () => {
     expect(
       toStatementImportRow(tx({ suggestedCategoryName: "Groceries" })).category
@@ -75,5 +90,67 @@ describe("statement import adapter", () => {
       ["b", 3.33],
       ["c", 3.33],
     ]);
+  });
+
+  it("builds stable fingerprints from normalized transaction fields", () => {
+    expect(
+      buildTransactionFingerprint({
+        date: "2026-01-15",
+        description: "SWIGGY   ORDER #123",
+        amount: 100,
+        currency: "inr",
+      })
+    ).toBe(
+      buildTransactionFingerprint({
+        date: "2026-01-15",
+        description: "swiggy order 123",
+        amount: -100,
+        currency: "INR",
+      })
+    );
+  });
+
+  it("flags rows that match existing expenses as duplicate-like", () => {
+    const fingerprint = buildTransactionFingerprint({
+      date: "2026-01-15",
+      description: "Swiggy",
+      amount: 100,
+      currency: "INR",
+    });
+
+    expect(
+      isDuplicateLikeImportRow(
+        {
+          date: "2026-01-15",
+          description: "Swiggy",
+          amount: 100,
+          currency: "INR",
+          transactionFingerprint: fingerprint,
+        },
+        [
+          {
+            description: "Different",
+            amount: 100,
+            currency: "INR",
+            timestamp: new Date(2026, 0, 15).getTime(),
+            transactionFingerprint: fingerprint,
+          },
+        ]
+      )
+    ).toBe(true);
+
+    expect(
+      toStatementImportRow(tx({ vendor: "Swiggy", amount: 100 }), {
+        currency: "INR",
+        existingExpenses: [
+          {
+            description: "swiggy",
+            amount: 100,
+            currency: "INR",
+            timestamp: new Date(2026, 0, 15).getTime(),
+          },
+        ],
+      }).selected
+    ).toBe(false);
   });
 });

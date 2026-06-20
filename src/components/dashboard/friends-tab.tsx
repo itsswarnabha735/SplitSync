@@ -12,7 +12,7 @@ import {
   Upload,
 } from "lucide-react";
 
-import type { Friend, FriendWithBalance } from "@/lib/models";
+import type { AdHocExpense, Friend, FriendWithBalance } from "@/lib/models";
 import { formatMoney } from "@/lib/currency";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
@@ -34,9 +34,11 @@ import {
 export function FriendsTab({
   friends,
   friendsWithBalances,
+  adHocExpenses,
 }: {
   friends: Friend[];
   friendsWithBalances: FriendWithBalance[];
+  adHocExpenses: AdHocExpense[];
 }) {
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
@@ -200,7 +202,7 @@ export function FriendsTab({
       <StatementImportDialog
         open={showStatementImport}
         onOpenChange={setShowStatementImport}
-        target={{ kind: "friend", friends }}
+        target={{ kind: "friend", friends, existingExpenses: adHocExpenses }}
       />
       <SettleAdHocDialog
         target={settleTarget}

@@ -23,6 +23,21 @@ import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 export const YOU_ID = "self" as const;
 
 export type SplitType = "EQUAL" | "EXACT";
+export type ExpenseSourceType = "statement-import";
+export type StatementParserMode = "ai-assisted" | "local-only";
+
+export interface ExpenseImportProvenance {
+  /** Present when this expense was created from an imported statement row. */
+  sourceType?: ExpenseSourceType;
+  /** Client-generated id shared by every expense from the same import run. */
+  importBatchId?: string;
+  /** Deterministic row fingerprint used to warn about duplicate imports. */
+  transactionFingerprint?: string;
+  /** Whether parsing used Gemini or local regex/OCR only. */
+  parserMode?: StatementParserMode;
+  /** Parser confidence for the imported row, when available. */
+  parserConfidence?: number;
+}
 
 export interface Group {
   id: string;
@@ -43,7 +58,7 @@ export interface GroupMember {
   linkedUid: string;
 }
 
-export interface Expense {
+export interface Expense extends ExpenseImportProvenance {
   id: string;
   groupId: string;
   description: string;
@@ -84,7 +99,7 @@ export interface Friend {
   createdByUid?: string;
 }
 
-export interface AdHocExpense {
+export interface AdHocExpense extends ExpenseImportProvenance {
   id: string;
   description: string;
   amount: number;

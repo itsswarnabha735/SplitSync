@@ -141,7 +141,6 @@ const PDF_WORKER_SRC = '/pdf.worker.min.mjs';
  * PDF text extraction service using PDF.js.
  */
 class PDFExtractorService {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private pdfjs: any = null;
   private isInitialized = false;
 

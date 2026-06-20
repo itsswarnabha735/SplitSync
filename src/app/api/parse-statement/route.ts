@@ -283,7 +283,6 @@ export async function POST(request: NextRequest) {
     const modelConfig = MODEL_TIERS[tier] || MODEL_TIERS.primary;
 
     // 7. Build Gemini API request body
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const generationConfig: Record<string, any> = {
       temperature: modelConfig.temperature,
       topP: 0.8,

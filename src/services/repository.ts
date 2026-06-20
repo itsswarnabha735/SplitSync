@@ -28,6 +28,7 @@ import {
   AdHocExpense,
   AdHocPayment,
   Expense,
+  ExpenseImportProvenance,
   FcmToken,
   Friend,
   Group,
@@ -79,6 +80,12 @@ function numberMapsEqual(
   const bKeys = Object.keys(b);
   if (aKeys.length !== bKeys.length) return false;
   return aKeys.every((key) => a[key] === b[key]);
+}
+
+function withoutUndefined<T extends object>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined)
+  ) as T;
 }
 
 /**
@@ -301,7 +308,7 @@ export function makeRepository(uid: string) {
       createdByUid: uid,
       category: params.category,
     };
-    await setDoc(ref, expense);
+    await setDoc(ref, withoutUndefined(expense));
   }
 
   async function createExpensesWithSplits(
@@ -315,7 +322,7 @@ export function makeRepository(uid: string) {
       timestamp?: number;
       currency?: string;
       category?: ExpenseCategorySlug;
-    }>
+    } & ExpenseImportProvenance>
   ): Promise<string[]> {
     const ids: string[] = [];
     const actions = expenses.map((params) => {
@@ -333,8 +340,14 @@ export function makeRepository(uid: string) {
         splits: splitsToMap(params.splits),
         createdByUid: uid,
         category: params.category,
+        sourceType: params.sourceType,
+        importBatchId: params.importBatchId,
+        transactionFingerprint: params.transactionFingerprint,
+        parserMode: params.parserMode,
+        parserConfidence: params.parserConfidence,
       };
-      return (batch: ReturnType<typeof writeBatch>) => batch.set(ref, expense);
+      return (batch: ReturnType<typeof writeBatch>) =>
+        batch.set(ref, withoutUndefined(expense));
     });
     await commitBatched(actions);
     return ids;
@@ -597,7 +610,7 @@ export function makeRepository(uid: string) {
     currency?: string;
     timestamp?: number;
     category?: ExpenseCategorySlug;
-  }): Promise<string> {
+  } & ExpenseImportProvenance): Promise<string> {
     const ref = doc(adhocExpensesRef());
     const expense: AdHocExpense = {
       id: ref.id,
@@ -610,8 +623,13 @@ export function makeRepository(uid: string) {
       splits: splitsToMap(params.splits),
       createdByUid: uid,
       category: params.category,
+      sourceType: params.sourceType,
+      importBatchId: params.importBatchId,
+      transactionFingerprint: params.transactionFingerprint,
+      parserMode: params.parserMode,
+      parserConfidence: params.parserConfidence,
     };
-    await setDoc(ref, expense);
+    await setDoc(ref, withoutUndefined(expense));
     return ref.id;
   }
 
@@ -625,7 +643,7 @@ export function makeRepository(uid: string) {
       currency?: string;
       timestamp?: number;
       category?: ExpenseCategorySlug;
-    }>
+    } & ExpenseImportProvenance>
   ): Promise<string[]> {
     const ids: string[] = [];
     const actions = expenses.map((params) => {
@@ -642,8 +660,14 @@ export function makeRepository(uid: string) {
         splits: splitsToMap(params.splits),
         createdByUid: uid,
         category: params.category,
+        sourceType: params.sourceType,
+        importBatchId: params.importBatchId,
+        transactionFingerprint: params.transactionFingerprint,
+        parserMode: params.parserMode,
+        parserConfidence: params.parserConfidence,
       };
-      return (batch: ReturnType<typeof writeBatch>) => batch.set(ref, expense);
+      return (batch: ReturnType<typeof writeBatch>) =>
+        batch.set(ref, withoutUndefined(expense));
     });
     await commitBatched(actions);
     return ids;

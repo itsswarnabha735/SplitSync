@@ -23,7 +23,7 @@ import {
 } from "@/lib/friend-identities";
 import { useRepository } from "@/hooks/use-repository";
 
-interface GroupSlice {
+export interface GroupSlice {
   members: GroupMember[];
   expenses: Expense[];
   payments: Payment[];
@@ -158,5 +158,6 @@ export function useFriends(groupIds: string[] = []) {
     adHocPayments: canonicalAdHocPayments,
     friendsWithBalances,
     adHocSplits,
+    groupSlices,
   };
 }

@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 import type { SplitType } from "@/lib/models";
+import type { ExpenseCategorySlug } from "@/lib/expense-categories";
+import {
+  EXPENSE_CATEGORIES,
+  suggestExpenseCategory,
+} from "@/lib/expense-categories";
 import { formatMoney, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { dateInputToLocalTimestamp, toDateInputValue } from "@/lib/dates";
 import { buildSplits, type SplitPair } from "@/lib/splits";
@@ -53,6 +58,8 @@ export default function AddExpensePage({
   const [amountStr, setAmountStr] = useState("");
   const [paidBy, setPaidBy] = useState<string>("");
   const [currency, setCurrency] = useState("USD");
+  const [category, setCategory] = useState<ExpenseCategorySlug>("other");
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [dateStr, setDateStr] = useState(() => toDateInputValue());
   const [splitType, setSplitType] = useState<SplitType>("EQUAL");
   const [split, setSplit] = useState<SplitState>({
@@ -64,6 +71,10 @@ export default function AddExpensePage({
   const [reviewSplits, setReviewSplits] = useState<SplitPair[] | null>(null);
 
   const amount = parseFloat(amountStr) || 0;
+  const suggestedCategory = useMemo(
+    () => suggestExpenseCategory(description)?.categorySlug ?? "other",
+    [description]
+  );
   const currentUserMemberId = useMemo(
     () => members.find((m) => m.linkedUid === user?.uid)?.id ?? "",
     [members, user?.uid]
@@ -87,6 +98,12 @@ export default function AddExpensePage({
       setPaidBy(currentUserMemberId || participants[0].id);
     }
   }, [participants, paidBy, currentUserMemberId]);
+
+  useEffect(() => {
+    if (!categoryTouched) {
+      setCategory(suggestedCategory);
+    }
+  }, [categoryTouched, suggestedCategory]);
 
   const memberName = useMemo(() => {
     const map = new Map(participants.map((p) => [p.id, p.name]));
@@ -163,6 +180,7 @@ export default function AddExpensePage({
             splits,
             timestamp: dateInputToLocalTimestamp(dateStr) ?? Date.now(),
             currency,
+            category,
           }),
         {
           loading: "Saving expense...",
@@ -244,7 +262,7 @@ export default function AddExpensePage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor="exp-date">Date</Label>
               <Input
@@ -264,6 +282,23 @@ export default function AddExpensePage({
                 {SUPPORTED_CURRENCIES.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="exp-category">Category</Label>
+              <NativeSelect
+                id="exp-category"
+                value={category}
+                onChange={(e) => {
+                  setCategory(e.target.value as ExpenseCategorySlug);
+                  setCategoryTouched(true);
+                }}
+              >
+                {EXPENSE_CATEGORIES.map((item) => (
+                  <option key={item.slug} value={item.slug}>
+                    {item.name}
                   </option>
                 ))}
               </NativeSelect>
@@ -321,7 +356,9 @@ export default function AddExpensePage({
               <p className="font-bold">{description.trim()}</p>
               <p className="text-sm text-muted-foreground">
                 {formatMoney(amount, currency)} paid by {memberName(paidBy)} on{" "}
-                {dateStr || "today"}
+                {dateStr || "today"} ·{" "}
+                {EXPENSE_CATEGORIES.find((item) => item.slug === category)?.name ??
+                  "Other"}
               </p>
             </div>
             <div className="space-y-2">

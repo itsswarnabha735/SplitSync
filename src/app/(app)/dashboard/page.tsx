@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LogOut, Mail, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { LogOut, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useGroups } from "@/hooks/use-groups";
@@ -11,6 +11,7 @@ import { useDashboardBalances } from "@/hooks/use-dashboard-balances";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import { signOut } from "@/services/auth";
+import { deriveSpendEntries } from "@/lib/spend-analysis";
 import { AppHeader } from "@/components/app-header";
 import { CurrencyTotals } from "@/components/currency-totals";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupsTab } from "@/components/dashboard/groups-tab";
 import { FriendsTab } from "@/components/dashboard/friends-tab";
-import { NotificationSettings } from "@/components/notification-settings";
+import { SpendTab } from "@/components/dashboard/spend-tab";
 
 export default function DashboardPage() {
   const { user, displayName } = useAuth();
@@ -31,13 +32,25 @@ export default function DashboardPage() {
 
   const { groups } = useGroups();
   const groupIds = useMemo(() => groups.map((g) => g.id), [groups]);
-  const { friends, friendsWithBalances } = useFriends(groupIds);
+  const { friends, friendsWithBalances, adHocExpenses, groupSlices } =
+    useFriends(groupIds);
   const invites = useInvites();
 
   const { youAreOwed, youOwe, net } = useDashboardBalances(
     groupIds,
     friendsWithBalances,
     friends
+  );
+  const spendEntries = useMemo(
+    () =>
+      deriveSpendEntries({
+        uid: user?.uid ?? null,
+        groups,
+        groupSlices,
+        friends,
+        adHocExpenses,
+      }),
+    [user?.uid, groups, groupSlices, friends, adHocExpenses]
   );
 
   async function handleInviteAction(
@@ -187,7 +200,7 @@ export default function DashboardPage() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="groups">Groups</TabsTrigger>
             <TabsTrigger value="friends">Friends</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="spend">Spend</TabsTrigger>
           </TabsList>
 
           <TabsContent value="groups">
@@ -198,35 +211,12 @@ export default function DashboardPage() {
             <FriendsTab
               friends={friends}
               friendsWithBalances={friendsWithBalances}
+              adHocExpenses={adHocExpenses}
             />
           </TabsContent>
 
-          <TabsContent value="settings">
-            <div className="space-y-3">
-              <NotificationSettings />
-              <Card className="space-y-4 border-primary/10 p-5">
-                <div className="flex items-center gap-3">
-                  <div className="social-gradient surface-glow flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white">
-                    {displayName.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-bold">{displayName}</p>
-                    <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                      <Mail className="h-3.5 w-3.5" />
-                      {user?.email}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => signOut()}
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </Button>
-              </Card>
-            </div>
+          <TabsContent value="spend">
+            <SpendTab entries={spendEntries} outstandingNet={net} />
           </TabsContent>
         </Tabs>
       </main>

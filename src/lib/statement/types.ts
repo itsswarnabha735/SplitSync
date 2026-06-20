@@ -4,8 +4,10 @@
  * Types for parsing bank and credit card statements into
  * individual transaction line items.
  *
- * PRIVACY: All statement processing happens locally in the browser.
- * Raw statement text and parsed data NEVER leave the device.
+ * PRIVACY: PDF/image extraction and regex parsing happen locally in the
+ * browser. AI-assisted parsing sends masked statement text to the configured
+ * server route, which calls Gemini. The import flow exposes a local-only mode
+ * when the user does not want AI parsing.
  */
 
 import type { ExpenseCategorySlug } from "@/lib/expense-categories";
