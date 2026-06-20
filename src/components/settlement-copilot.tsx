@@ -35,6 +35,7 @@ interface SettlementCopilotButtonProps {
   context?: SettlementCopilotContext;
   prompt?: string;
   label?: string;
+  labelClassName?: string;
   buttonVariant?: ButtonProps["variant"];
   buttonSize?: ButtonProps["size"];
   className?: string;
@@ -69,6 +70,7 @@ function SettlementCopilotDialogButton({
   context,
   prompt = "",
   label = "Ask Copilot",
+  labelClassName,
   buttonVariant = "ghost",
   buttonSize = "sm",
   className,
@@ -164,7 +166,7 @@ function SettlementCopilotDialogButton({
         }}
       >
         <Sparkles className="h-4 w-4" />
-        {label}
+        <span className={labelClassName}>{label}</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[86vh] overflow-y-auto sm:max-w-2xl">
@@ -200,7 +202,10 @@ function SettlementCopilotDialogButton({
             </div>
           </div>
 
-          <form className="flex gap-2" onSubmit={handleSubmit}>
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={handleSubmit}
+          >
             <Input
               value={input}
               onChange={(event) => {
@@ -210,7 +215,11 @@ function SettlementCopilotDialogButton({
               placeholder="Ask why someone owes, check ledger health, or draft a summary"
               disabled={loading}
             />
-            <Button type="submit" disabled={loading || !input.trim()}>
+            <Button
+              type="submit"
+              className="h-11 sm:h-10"
+              disabled={loading || !input.trim()}
+            >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

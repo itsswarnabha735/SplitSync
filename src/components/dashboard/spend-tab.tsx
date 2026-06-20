@@ -107,13 +107,14 @@ export function SpendTab({ entries, outstandingNet }: SpendTabProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex sm:justify-end">
         <SettlementCopilotButton
           contextType="spend"
           context={copilotContext}
           prompt="Which imported expenses need review?"
           label="Ask Spend Copilot"
           buttonVariant="outline"
+          className="h-11 w-full sm:h-9 sm:w-auto"
         />
       </div>
       <Card className="space-y-3 border-primary/10 p-4">
@@ -390,8 +391,8 @@ function SpendRow({
 }) {
   const category = getExpenseCategory(entry.category);
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card/80 px-3 py-2">
-      <div className="min-w-0">
+    <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-card/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate font-bold">{entry.scopeName}</p>
           <Badge variant={entry.origin === "imported" ? "outline" : "muted"}>
@@ -405,7 +406,7 @@ function SpendRow({
           </p>
         )}
       </div>
-      <div className="text-right">
+      <div className="shrink-0 text-left sm:text-right">
         <p className="font-black">{formatMoney(entry.myShare, entry.currency)}</p>
         {!compact && (
           <p className="text-xs text-muted-foreground">

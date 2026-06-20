@@ -90,14 +90,15 @@ export function FriendsTab({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
           Friends
         </h2>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button
             size="sm"
             variant="outline"
+            className="h-11 w-full sm:h-9 sm:w-auto"
             onClick={() => setShowAddFriend(true)}
           >
             <UserPlus className="h-4 w-4" />
@@ -105,11 +106,12 @@ export function FriendsTab({
           </Button>
           <Button
             size="sm"
+            className="h-11 w-full sm:h-9 sm:w-auto"
             onClick={() => setShowAddExpense(true)}
             disabled={friends.length === 0}
           >
             <Plus className="h-4 w-4" />
-            Add
+            Add expense
           </Button>
         </div>
       </div>
@@ -160,52 +162,80 @@ export function FriendsTab({
             });
             return (
               <Card key={friend.id} className="border-primary/10 p-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent font-black text-accent-foreground shadow-inner shadow-white/50">
-                    {friend.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold">{friend.name}</p>
-                    <div className="mt-0.5 flex flex-wrap gap-1.5">
-                      {nonZero.length === 0 ? (
-                        <Badge variant="muted">Settled up</Badge>
-                      ) : (
-                        nonZero.map((b) => (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent font-black text-accent-foreground shadow-inner shadow-white/50">
+                      {friend.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-bold">{friend.name}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-0.5">
+                        {nonZero.length === 0 ? (
                           <Badge
-                            key={b.currency}
-                            variant={b.netBalance > 0 ? "success" : "destructive"}
+                            variant="muted"
+                            className="rounded-xl sm:rounded-full"
                           >
-                            {b.netBalance > 0
-                              ? `owes you ${formatMoney(b.netBalance, b.currency)}`
-                              : `you owe ${formatMoney(-b.netBalance, b.currency)}`}
+                            Settled up
                           </Badge>
-                        ))
-                      )}
+                        ) : (
+                          nonZero.map((b) => (
+                            <Badge
+                              key={b.currency}
+                              variant={
+                                b.netBalance > 0 ? "success" : "destructive"
+                              }
+                              className="max-w-full rounded-xl text-left leading-tight sm:rounded-full"
+                            >
+                              {b.netBalance > 0
+                                ? `owes you ${formatMoney(b.netBalance, b.currency)}`
+                                : `you owe ${formatMoney(-b.netBalance, b.currency)}`}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    <div className="sm:hidden">
+                      <FriendRowActions
+                        friendName={friend.name}
+                        deleting={deletingFriendId === friend.id}
+                        disabled={!repo || deletingFriendId === friend.id}
+                        onDelete={() => handleDeleteFriend(friend)}
+                      />
                     </div>
                   </div>
-                  {primary && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSettleTarget(primary)}
-                    >
-                      <HandCoins className="h-4 w-4" />
-                      Settle
-                    </Button>
-                  )}
-                  <SettlementCopilotButton
-                    contextType="friend"
-                    context={copilotContext}
-                    prompt="Summarize this balance"
-                    label="Ask"
-                    buttonVariant="outline"
-                  />
-                  <FriendRowActions
-                    friendName={friend.name}
-                    deleting={deletingFriendId === friend.id}
-                    disabled={!repo || deletingFriendId === friend.id}
-                    onDelete={() => handleDeleteFriend(friend)}
-                  />
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                    {primary && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-11 w-full sm:h-9 sm:w-auto"
+                        onClick={() => setSettleTarget(primary)}
+                      >
+                        <HandCoins className="h-4 w-4" />
+                        Settle
+                      </Button>
+                    )}
+                    <SettlementCopilotButton
+                      contextType="friend"
+                      context={copilotContext}
+                      prompt="Summarize this balance"
+                      label="Ask"
+                      buttonVariant="outline"
+                      className={
+                        primary
+                          ? "h-11 w-full sm:h-9 sm:w-auto"
+                          : "col-span-2 h-11 w-full sm:col-span-1 sm:h-9 sm:w-auto"
+                      }
+                    />
+                  </div>
+                  <div className="hidden sm:block">
+                    <FriendRowActions
+                      friendName={friend.name}
+                      deleting={deletingFriendId === friend.id}
+                      disabled={!repo || deletingFriendId === friend.id}
+                      onDelete={() => handleDeleteFriend(friend)}
+                    />
+                  </div>
                 </div>
               </Card>
             );

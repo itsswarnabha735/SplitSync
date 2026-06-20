@@ -93,6 +93,7 @@ export default function DashboardPage() {
           <Button
             variant="ghost"
             size="icon"
+            className="h-11 w-11 sm:h-10 sm:w-10"
             aria-label="Sign out"
             onClick={() => signOut()}
           >
@@ -101,12 +102,15 @@ export default function DashboardPage() {
         }
       />
 
-      <main id="main-content" className="container space-y-5 py-6">
+      <main
+        id="main-content"
+        className="container space-y-4 py-4 sm:space-y-5 sm:py-6"
+      >
         {/* Summary */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Card className="money-card social-gradient surface-glow p-5 text-white">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+          <Card className="money-card social-gradient surface-glow col-span-2 p-4 text-white sm:col-span-1 sm:p-5">
             <div className="relative z-10">
-              <div className="flex items-center gap-2 text-xs font-black uppercase opacity-85">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase leading-tight opacity-85 sm:text-xs">
                 <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/18">
                   <Wallet className="h-3.5 w-3.5" />
                 </span>
@@ -115,13 +119,13 @@ export default function DashboardPage() {
               <CurrencyTotals
                 totals={net}
                 signed
-                className="mt-3 text-3xl font-black tracking-tight"
+                className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl"
                 emptyLabel="All settled"
               />
             </div>
           </Card>
-          <Card className="border-success/20 bg-success/10 p-5">
-            <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+          <Card className="border-success/20 bg-success/10 p-4 sm:p-5">
+            <div className="flex items-center gap-2 text-[11px] font-black uppercase leading-tight text-muted-foreground sm:text-xs">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-success/15 text-success">
                 <TrendingUp className="h-3.5 w-3.5" />
               </span>
@@ -129,11 +133,11 @@ export default function DashboardPage() {
             </div>
             <CurrencyTotals
               totals={youAreOwed}
-              className="mt-3 text-3xl font-black tracking-tight text-success"
+              className="mt-2 text-2xl font-black text-success sm:mt-3 sm:text-3xl"
             />
           </Card>
-          <Card className="border-destructive/20 bg-destructive/10 p-5">
-            <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+          <Card className="border-destructive/20 bg-destructive/10 p-4 sm:p-5">
+            <div className="flex items-center gap-2 text-[11px] font-black uppercase leading-tight text-muted-foreground sm:text-xs">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-destructive/15 text-destructive">
                 <TrendingDown className="h-3.5 w-3.5" />
               </span>
@@ -141,7 +145,7 @@ export default function DashboardPage() {
             </div>
             <CurrencyTotals
               totals={youOwe}
-              className="mt-3 text-3xl font-black tracking-tight text-destructive"
+              className="mt-2 text-2xl font-black text-destructive sm:mt-3 sm:text-3xl"
             />
           </Card>
         </div>
@@ -197,10 +201,16 @@ export default function DashboardPage() {
 
         {/* Tabs */}
         <Tabs defaultValue="groups">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="groups">Groups</TabsTrigger>
-            <TabsTrigger value="friends">Friends</TabsTrigger>
-            <TabsTrigger value="spend">Spend</TabsTrigger>
+          <TabsList className="grid h-12 w-full grid-cols-3 rounded-xl sm:h-11 sm:rounded-2xl">
+            <TabsTrigger value="groups" className="rounded-lg sm:rounded-xl">
+              Groups
+            </TabsTrigger>
+            <TabsTrigger value="friends" className="rounded-lg sm:rounded-xl">
+              Friends
+            </TabsTrigger>
+            <TabsTrigger value="spend" className="rounded-lg sm:rounded-xl">
+              Spend
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="groups">
