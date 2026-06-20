@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getFirebaseApp } from "@/lib/firebase";
+import type { NotificationPreference } from "@/lib/models";
 import { useRepository } from "@/hooks/use-repository";
-import { useNotificationPreferences } from "@/hooks/use-notifications";
 import { useUiStore } from "@/stores/ui-store";
 
 const TOKEN_HASH_KEY = "splitsync:fcm-token-hash";
@@ -52,9 +52,16 @@ function pushSetupErrorMessage(err: unknown): string {
   return message;
 }
 
-export function usePushNotifications() {
+type PushNotificationPreferenceControls = {
+  preferences: NotificationPreference;
+  updatePreferences: (patch: Partial<NotificationPreference>) => Promise<void> | void;
+};
+
+export function usePushNotifications({
+  preferences,
+  updatePreferences,
+}: PushNotificationPreferenceControls) {
   const repo = useRepository();
-  const { preferences, updatePreferences } = useNotificationPreferences();
   const showToast = useUiStore((s) => s.showToast);
   const [supported, setSupported] = useState<boolean | null>(null);
   const [permission, setPermission] =

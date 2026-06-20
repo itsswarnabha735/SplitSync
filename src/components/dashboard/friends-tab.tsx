@@ -198,6 +198,7 @@ export function FriendsTab({
         open={showAddExpense}
         onOpenChange={setShowAddExpense}
         friends={friends}
+        adHocExpenses={adHocExpenses}
       />
       <StatementImportDialog
         open={showStatementImport}

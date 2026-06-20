@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 import type { SplitType } from "@/lib/models";
+import type { AppliedExpenseAutocomplete } from "@/lib/expense-autocomplete";
 import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 import {
   EXPENSE_CATEGORIES,
@@ -18,6 +19,10 @@ import { useGroupDetail } from "@/hooks/use-group-detail";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
 import { AppHeader } from "@/components/app-header";
+import {
+  buildAutocompleteCurrentFields,
+  ExpenseAutocompletePanel,
+} from "@/components/expense-autocomplete-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,7 +52,7 @@ export default function AddExpensePage({
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
   const { user } = useAuth();
-  const { members } = useGroupDetail(groupId);
+  const { members, expenses } = useGroupDetail(groupId);
 
   const participants = useMemo(
     () => members.map((m) => ({ id: m.id, name: m.name })),
@@ -78,6 +83,40 @@ export default function AddExpensePage({
   const currentUserMemberId = useMemo(
     () => members.find((m) => m.linkedUid === user?.uid)?.id ?? "",
     [members, user?.uid]
+  );
+  const autocompleteParticipants = useMemo(
+    () =>
+      members.map((member) => ({
+        id: member.id,
+        name:
+          member.linkedUid && member.linkedUid === user?.uid
+            ? "You"
+            : member.name,
+        isCurrentUser: member.linkedUid === user?.uid,
+        aliases:
+          member.linkedUid === user?.uid
+            ? ["me", "myself", "i", "you", member.name]
+            : [member.name],
+      })),
+    [members, user?.uid]
+  );
+  const recentContext = useMemo(
+    () =>
+      expenses.slice(0, 12).map((expense) => ({
+        description: expense.description,
+        amount: expense.amount,
+        currency: expense.currency,
+        category: expense.category,
+        paidById: expense.paidById,
+        splitType: expense.splitType,
+        participantIds: Object.keys(expense.splits),
+        timestamp: expense.timestamp,
+      })),
+    [expenses]
+  );
+  const supportedCurrencyCodes = useMemo(
+    () => SUPPORTED_CURRENCIES.map((item) => item.code),
+    []
   );
 
   // Default all members into the equal split as they load.
@@ -162,6 +201,28 @@ export default function AddExpensePage({
     setReviewSplits(nextSplits);
   }
 
+  function handleAutocompleteApply(result: AppliedExpenseAutocomplete) {
+    const next = result.fields;
+    if (next.description !== undefined) setDescription(next.description);
+    if (next.amountStr !== undefined) setAmountStr(next.amountStr);
+    if (next.currency !== undefined) setCurrency(next.currency);
+    if (next.dateStr !== undefined) setDateStr(next.dateStr);
+    if (next.paidBy !== undefined) setPaidBy(next.paidBy);
+    if (next.category !== undefined) {
+      setCategory(next.category);
+      setCategoryTouched(true);
+    }
+    if (next.splitType !== undefined) setSplitType(next.splitType);
+    if (next.equalSelections || next.exactInputs) {
+      setSplit((current) => ({
+        equalSelections: next.equalSelections ?? current.equalSelections,
+        exactInputs: next.exactInputs ?? current.exactInputs,
+      }));
+    }
+    setReviewSplits(null);
+    setError(null);
+  }
+
   async function handleSave() {
     const splits = reviewSplits ?? getValidatedSplits();
     if (!splits) return;
@@ -210,6 +271,25 @@ export default function AddExpensePage({
             {error}
           </div>
         )}
+
+        <ExpenseAutocompletePanel
+          mode="group"
+          participants={autocompleteParticipants}
+          supportedCurrencies={supportedCurrencyCodes}
+          recentContext={recentContext}
+          largeExpenseThresholds={{}}
+          current={buildAutocompleteCurrentFields({
+            description,
+            amountStr,
+            currency,
+            dateStr,
+            paidBy,
+            category,
+            splitType,
+          })}
+          onApply={handleAutocompleteApply}
+          placeholder="Uber 920 INR paid by me split with everyone yesterday"
+        />
 
         <Card className="space-y-4 border-primary/10 p-5">
           <p className="text-xs font-black uppercase tracking-wide text-primary">

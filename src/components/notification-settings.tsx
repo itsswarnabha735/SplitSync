@@ -13,8 +13,8 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 
 export function NotificationSettings() {
-  const push = usePushNotifications();
   const { preferences, updatePreferences } = useNotificationPreferences();
+  const push = usePushNotifications({ preferences, updatePreferences });
   const [thresholdCurrency, setThresholdCurrency] = useState("USD");
   const currentThreshold = useMemo(
     () => preferences.largeExpenseThresholds[thresholdCurrency] ?? "",

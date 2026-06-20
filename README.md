@@ -61,8 +61,9 @@ cp .env.local.example .env.local
 ```
 
 4. Add `GOOGLE_GEMINI_API_KEY` if you want AI statement parsing for the
-   statement expense importer. Without it, statement parsing falls back to the
-   local pattern parser.
+   statement expense importer and Smart Expense Copilot. Without it, parsing
+   falls back to local deterministic extraction where available. Optionally set
+   `EXPENSE_AUTOCOMPLETE_MODEL` to override the copilot model.
 5. Update [`.firebaserc`](.firebaserc) with your real project id.
 
 ### 3. Run

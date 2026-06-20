@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Friend, SplitType } from "@/lib/models";
+import type { AppliedExpenseAutocomplete } from "@/lib/expense-autocomplete";
+import type { AdHocExpense, Friend, SplitType } from "@/lib/models";
 import { YOU_ID } from "@/lib/models";
 import type { ExpenseCategorySlug } from "@/lib/expense-categories";
 import {
@@ -14,6 +15,10 @@ import { dateInputToLocalTimestamp, toDateInputValue } from "@/lib/dates";
 import { buildSplits } from "@/lib/splits";
 import { useRepository } from "@/hooks/use-repository";
 import { useUiStore } from "@/stores/ui-store";
+import {
+  buildAutocompleteCurrentFields,
+  ExpenseAutocompletePanel,
+} from "@/components/expense-autocomplete-panel";
 import {
   Dialog,
   DialogContent,
@@ -36,10 +41,12 @@ export function AddAdHocExpenseDialog({
   open,
   onOpenChange,
   friends,
+  adHocExpenses,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   friends: Friend[];
+  adHocExpenses: AdHocExpense[];
 }) {
   const repo = useRepository();
   const runSyncing = useUiStore((s) => s.runSyncing);
@@ -71,6 +78,7 @@ export function AddAdHocExpenseDialog({
   const [split, setSplit] = useState<SplitState>(() =>
     emptySplitState(participants)
   );
+  const pendingAutocompleteSplitRef = useRef<Partial<SplitState> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -88,7 +96,18 @@ export function AddAdHocExpenseDialog({
     setPaidBy((current) =>
       current === YOU_ID || current === selectedFriend.id ? current : YOU_ID
     );
-    setSplit(emptySplitState(participants));
+    const pendingAutocompleteSplit = pendingAutocompleteSplitRef.current;
+    if (pendingAutocompleteSplit) {
+      setSplit({
+        equalSelections:
+          pendingAutocompleteSplit.equalSelections ??
+          emptySplitState(participants).equalSelections,
+        exactInputs: pendingAutocompleteSplit.exactInputs ?? {},
+      });
+      pendingAutocompleteSplitRef.current = null;
+    } else {
+      setSplit(emptySplitState(participants));
+    }
   }, [participants, selectedFriend, selectedFriendId]);
 
   useEffect(() => {
@@ -108,8 +127,98 @@ export function AddAdHocExpenseDialog({
     setCategoryTouched(false);
     setSplitType("EQUAL");
     setSplit(emptySplitState(participants));
+    pendingAutocompleteSplitRef.current = null;
     setError(null);
     setSaving(false);
+  }
+
+  const autocompleteParticipants = useMemo(
+    () => [
+      {
+        id: YOU_ID,
+        name: "You",
+        isCurrentUser: true,
+        aliases: ["me", "myself", "i", "you"],
+      },
+      ...friends.map((friend) => ({
+        id: friend.id,
+        name: friend.name,
+        isCurrentUser: false,
+        aliases: [friend.name, friend.email, friend.phone].filter(Boolean),
+      })),
+    ],
+    [friends]
+  );
+  const recentContext = useMemo(
+    () =>
+      adHocExpenses.slice(0, 12).map((expense) => ({
+        description: expense.description,
+        amount: expense.amount,
+        currency: expense.currency,
+        category: expense.category,
+        paidById: expense.paidByFriendId,
+        splitType: expense.splitType,
+        participantIds: Object.keys(expense.splits),
+        timestamp: expense.timestamp,
+      })),
+    [adHocExpenses]
+  );
+  const supportedCurrencyCodes = useMemo(
+    () => SUPPORTED_CURRENCIES.map((item) => item.code),
+    []
+  );
+
+  function handleAutocompleteApply(result: AppliedExpenseAutocomplete) {
+    const next = result.fields;
+    const nextFriendId = friendIdFromAutocomplete(result, selectedFriendId);
+
+    if (nextFriendId && nextFriendId !== selectedFriendId) {
+      setSelectedFriendId(nextFriendId);
+    }
+
+    if (next.description !== undefined) setDescription(next.description);
+    if (next.amountStr !== undefined) setAmountStr(next.amountStr);
+    if (next.currency !== undefined) setCurrency(next.currency);
+    if (next.dateStr !== undefined) setDateStr(next.dateStr);
+    if (next.category !== undefined) {
+      setCategory(next.category);
+      setCategoryTouched(true);
+    }
+    if (next.splitType !== undefined) setSplitType(next.splitType);
+
+    const scopedFriendId = nextFriendId || selectedFriendId;
+    if (next.paidBy !== undefined) {
+      setPaidBy(next.paidBy === YOU_ID || next.paidBy === scopedFriendId ? next.paidBy : YOU_ID);
+    }
+
+    if (scopedFriendId && (next.equalSelections || next.exactInputs)) {
+      const allowed = new Set([YOU_ID, scopedFriendId]);
+      const equalSelections = next.equalSelections
+        ? Object.fromEntries(
+            [YOU_ID, scopedFriendId].map((id) => [
+              id,
+              next.equalSelections?.[id] ?? true,
+            ])
+          )
+        : undefined;
+      const exactInputs = next.exactInputs
+        ? Object.fromEntries(
+            Object.entries(next.exactInputs).filter(([id]) => allowed.has(id))
+          )
+        : undefined;
+      const pendingSplit = { equalSelections, exactInputs };
+      if (nextFriendId && nextFriendId !== selectedFriendId) {
+        pendingAutocompleteSplitRef.current = pendingSplit;
+      } else {
+        setSplit({
+          equalSelections:
+            pendingSplit.equalSelections ?? emptySplitState(participants).equalSelections,
+          exactInputs: pendingSplit.exactInputs ?? {},
+        });
+      }
+    }
+
+    setError(null);
   }
 
   async function handleSave() {
@@ -199,6 +308,25 @@ export function AddAdHocExpenseDialog({
               {error}
             </p>
           )}
+
+          <ExpenseAutocompletePanel
+            mode="friend"
+            participants={autocompleteParticipants}
+            supportedCurrencies={supportedCurrencyCodes}
+            recentContext={recentContext}
+            largeExpenseThresholds={{}}
+            current={buildAutocompleteCurrentFields({
+              description,
+              amountStr,
+              currency,
+              dateStr,
+              paidBy,
+              category,
+              splitType,
+            })}
+            onApply={handleAutocompleteApply}
+            placeholder="Cab to airport ₹1380 paid by me, split with Priya"
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="adhoc-desc">Description</Label>
@@ -335,6 +463,19 @@ export function AddAdHocExpenseDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function friendIdFromAutocomplete(
+  result: AppliedExpenseAutocomplete,
+  fallbackFriendId: string
+): string {
+  const candidates = [
+    result.draft.paidById,
+    ...(result.draft.equalParticipantIds ?? []),
+    ...Object.keys(result.draft.exactSplits ?? {}),
+  ].filter((id): id is string => Boolean(id && id !== YOU_ID));
+
+  return candidates[0] ?? fallbackFriendId;
 }
 
 export function SplitTypeToggle({
