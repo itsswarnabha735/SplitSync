@@ -23,7 +23,7 @@ export function CurrencyTotals({
   return (
     <span className={cn("flex flex-wrap gap-x-3", className)}>
       {entries.map(([code, amount]) => (
-        <span key={code}>
+        <span key={code} className="min-w-0 max-w-full break-words">
           {signed && amount > 0 ? "+" : ""}
           {formatMoney(amount, code)}
         </span>

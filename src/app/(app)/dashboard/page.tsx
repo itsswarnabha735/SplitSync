@@ -190,7 +190,7 @@ export default function DashboardPage() {
               <CurrencyTotals
                 totals={net}
                 signed
-                className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl"
+                className="mt-3 flex-col gap-y-1 text-[1.75rem] font-black leading-none sm:flex-row sm:text-3xl"
                 emptyLabel="All settled"
               />
             </div>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
             </div>
             <CurrencyTotals
               totals={youAreOwed}
-              className="mt-2 text-2xl font-black text-success sm:mt-3 sm:text-3xl"
+              className="mt-2 flex-col gap-y-1 text-[1.55rem] font-black leading-tight text-success sm:mt-3 sm:text-3xl"
             />
           </Card>
           <Card className="border-destructive/20 bg-destructive/10 p-4 sm:p-5">
@@ -216,7 +216,7 @@ export default function DashboardPage() {
             </div>
             <CurrencyTotals
               totals={youOwe}
-              className="mt-2 text-2xl font-black text-destructive sm:mt-3 sm:text-3xl"
+              className="mt-2 flex-col gap-y-1 text-[1.55rem] font-black leading-tight text-destructive sm:mt-3 sm:text-3xl"
             />
           </Card>
         </div>

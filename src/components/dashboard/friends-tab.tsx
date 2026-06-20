@@ -346,63 +346,72 @@ export function FriendsTab({
                       return (
                         <div
                           key={`${activity.kind}:${activity.id}`}
-                          className="flex items-center gap-3 rounded-xl border border-border/70 px-3 py-2"
+                          className="rounded-xl border border-border/70 px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:py-2"
                         >
-                          {activity.kind === "expense" ? (
-                            <Receipt className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <HandCoins className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold">
-                              {activity.label}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {formatDate(activity.timestamp)} · {activity.meta}
-                            </p>
-                          </div>
-                          <p className="shrink-0 text-sm font-black">
-                            {formatMoney(activity.amount, activity.currency)}
-                          </p>
-                          {(canEdit || canDelete) && (
-                            <div className="flex shrink-0 gap-1">
-                              {canEdit && activity.kind === "expense" && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setEditingExpense(activity.item)}
-                                  aria-label={`Edit ${activity.label}`}
-                                >
-                                  <Edit3 className="h-4 w-4" />
-                                  Edit
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-destructive hover:text-destructive"
-                                  onClick={() => {
-                                    if (activity.kind === "expense") {
-                                      setPendingDelete({
-                                        kind: "expense",
-                                        item: activity.item,
-                                      });
-                                    } else {
-                                      setPendingDelete({
-                                        kind: "payment",
-                                        item: activity.item,
-                                      });
-                                    }
-                                  }}
-                                  aria-label={`Delete ${activity.label}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete
-                                </Button>
-                              )}
+                          <div className="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
+                            {activity.kind === "expense" ? (
+                              <Receipt className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground sm:mt-0" />
+                            ) : (
+                              <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground sm:mt-0" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-bold">
+                                {activity.label}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {formatDate(activity.timestamp)} · {activity.meta}
+                              </p>
                             </div>
-                          )}
+                          </div>
+                          <div className="mt-3 flex min-w-0 items-center justify-between gap-2 border-t border-border/60 pt-3 sm:mt-0 sm:border-0 sm:pt-0">
+                            <p className="min-w-0 truncate text-sm font-black">
+                              {formatMoney(activity.amount, activity.currency)}
+                            </p>
+                            {(canEdit || canDelete) && (
+                              <div className="flex shrink-0 gap-1">
+                                {canEdit && activity.kind === "expense" && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-11 w-11 px-0 sm:h-9 sm:w-auto sm:px-3"
+                                    onClick={() => setEditingExpense(activity.item)}
+                                    aria-label={`Edit ${activity.label}`}
+                                  >
+                                    <Edit3 className="h-4 w-4" />
+                                    <span className="sr-only sm:not-sr-only">
+                                      Edit
+                                    </span>
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-11 w-11 px-0 text-destructive hover:text-destructive sm:h-9 sm:w-auto sm:px-3"
+                                    onClick={() => {
+                                      if (activity.kind === "expense") {
+                                        setPendingDelete({
+                                          kind: "expense",
+                                          item: activity.item,
+                                        });
+                                      } else {
+                                        setPendingDelete({
+                                          kind: "payment",
+                                          item: activity.item,
+                                        });
+                                      }
+                                    }}
+                                    aria-label={`Delete ${activity.label}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    <span className="sr-only sm:not-sr-only">
+                                      Delete
+                                    </span>
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
