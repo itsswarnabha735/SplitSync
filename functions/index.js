@@ -26,8 +26,11 @@ const {
 } = require("./notification-core");
 const {
   GMAIL_QUERY,
+  DEFAULT_GMAIL_AI_MODEL,
+  DEFAULT_AI_HIGH_CONFIDENCE,
+  DEFAULT_AI_MEDIUM_CONFIDENCE,
   gmailMessageToInput,
-  parseGmailTransactionCandidate,
+  recognizeGmailExpenseCandidate,
 } = require("./transaction-radar-core");
 
 admin.initializeApp();
@@ -38,12 +41,16 @@ const SELF = "self";
 const GMAIL_OAUTH_CLIENT_SECRET = defineSecret("GMAIL_OAUTH_CLIENT_SECRET");
 const GMAIL_TOKEN_ENCRYPTION_KEY = defineSecret("GMAIL_TOKEN_ENCRYPTION_KEY");
 const GMAIL_OAUTH_STATE_SECRET = defineSecret("GMAIL_OAUTH_STATE_SECRET");
+const GOOGLE_GEMINI_API_KEY = defineSecret("GOOGLE_GEMINI_API_KEY");
 const gmailSecretOptions = {
   secrets: [
     GMAIL_OAUTH_CLIENT_SECRET,
     GMAIL_TOKEN_ENCRYPTION_KEY,
     GMAIL_OAUTH_STATE_SECRET,
   ],
+};
+const gmailRecognitionSecretOptions = {
+  secrets: [...gmailSecretOptions.secrets, GOOGLE_GEMINI_API_KEY],
 };
 const GMAIL_PUBSUB_TOPIC_ID =
   process.env.GMAIL_PUBSUB_TOPIC_ID ||
@@ -540,6 +547,90 @@ async function gmailApi(accessToken, path, options = {}) {
   return data;
 }
 
+function envFlag(name, fallback) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+}
+
+function numberEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function gmailAiRecognitionConfig(settings = {}) {
+  const enabled =
+    settings.aiRecognitionEnabled !== false &&
+    envFlag("GMAIL_AI_RECOGNITION_ENABLED", true);
+  const highConfidence =
+    typeof settings.aiRecognitionMinConfidence === "number"
+      ? Math.max(0, Math.min(1, settings.aiRecognitionMinConfidence))
+      : numberEnv(
+          "GMAIL_AI_RECOGNITION_MIN_CONFIDENCE",
+          DEFAULT_AI_HIGH_CONFIDENCE
+        );
+  return {
+    enabled,
+    model:
+      settings.aiRecognitionModel ||
+      process.env.GMAIL_AI_RECOGNITION_MODEL ||
+      DEFAULT_GMAIL_AI_MODEL,
+    highConfidence,
+    mediumConfidence: DEFAULT_AI_MEDIUM_CONFIDENCE,
+  };
+}
+
+async function recognizeGmailWithGemini({ prompt, model }) {
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini recognition is not configured.");
+  }
+  const generationConfig = {
+    temperature: 0.05,
+    topP: 0.8,
+    maxOutputTokens: 2048,
+    responseMimeType: "application/json",
+  };
+  if (String(model).includes("2.5-flash")) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      model
+    )}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig,
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE",
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE",
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(25000),
+    }
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      data.error?.message || `Gemini recognition failed with ${response.status}.`
+    );
+  }
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!text) throw new Error("Gemini recognition returned an empty response.");
+  return text;
+}
+
 async function ensureGmailWatch(uid, accessToken) {
   const topicName = process.env.GMAIL_PUBSUB_TOPIC;
   if (!topicName) return null;
@@ -591,6 +682,17 @@ async function syncGmailForUid(uid, options = {}) {
     },
   });
   const ignored = new Set(settings.ignoredMerchants || []);
+  const aiConfig = gmailAiRecognitionConfig(settings);
+  let aiUnavailable = false;
+  const aiRecognize =
+    aiConfig.enabled && process.env.GOOGLE_GEMINI_API_KEY
+      ? (request) =>
+          recognizeGmailWithGemini({
+            prompt: request.prompt,
+            model: request.model || aiConfig.model,
+          })
+      : null;
+  if (aiConfig.enabled && !aiRecognize) aiUnavailable = true;
   let scanned = 0;
   let created = 0;
   let skipped = 0;
@@ -605,11 +707,27 @@ async function syncGmailForUid(uid, options = {}) {
     const message = await gmailApi(accessToken, `messages/${item.id}`, {
       query: { format: "full" },
     });
-    const candidate = parseGmailTransactionCandidate(gmailMessageToInput(message), {
-      userId: uid,
-      now: now(),
-      retentionDays: settings.retentionDays || 30,
-    });
+    const candidate = await recognizeGmailExpenseCandidate(
+      gmailMessageToInput(message),
+      {
+        userId: uid,
+        now: now(),
+        retentionDays: settings.retentionDays || 30,
+        aiEnabled: aiConfig.enabled,
+        aiRecognize,
+        model: aiConfig.model,
+        highConfidence: aiConfig.highConfidence,
+        mediumConfidence: aiConfig.mediumConfidence,
+        onAiError: (err) => {
+          aiUnavailable = true;
+          logger.warn("Gmail AI recognition skipped message", {
+            uid,
+            messageId: item.id,
+            error: err.message,
+          });
+        },
+      }
+    );
     if (!candidate || ignored.has(candidate.normalizedMerchant)) {
       skipped += 1;
       continue;
@@ -623,10 +741,21 @@ async function syncGmailForUid(uid, options = {}) {
       scanStatus: "active",
       lastSyncedAt: now(),
       lastSyncError: "",
+      aiRecognitionEnabled: aiConfig.enabled,
+      aiRecognitionModel: aiConfig.model,
+      aiRecognitionMinConfidence: aiConfig.highConfidence,
       updatedAt: now(),
     },
     { merge: true }
   );
+  if (aiUnavailable) {
+    logger.warn("Gmail sync completed with AI recognition skips", {
+      uid,
+      scanned,
+      created,
+      skipped,
+    });
+  }
   return { scanned, created, skipped, paused: false };
 }
 
@@ -653,7 +782,7 @@ exports.createGmailOAuthUrl = onCall(gmailSecretOptions, async (request) => {
   return { url: url.toString() };
 });
 
-exports.finishGmailOAuth = onCall(gmailSecretOptions, async (request) => {
+exports.finishGmailOAuth = onCall(gmailRecognitionSecretOptions, async (request) => {
   const uid = requireCallableAuth(request);
   const code = String(request.data?.code || "");
   const state = String(request.data?.state || "");
@@ -703,6 +832,13 @@ exports.finishGmailOAuth = onCall(gmailSecretOptions, async (request) => {
       ],
       connectedAt: now(),
       lastSyncError: "",
+      aiRecognitionEnabled: envFlag("GMAIL_AI_RECOGNITION_ENABLED", true),
+      aiRecognitionModel:
+        process.env.GMAIL_AI_RECOGNITION_MODEL || DEFAULT_GMAIL_AI_MODEL,
+      aiRecognitionMinConfidence: numberEnv(
+        "GMAIL_AI_RECOGNITION_MIN_CONFIDENCE",
+        DEFAULT_AI_HIGH_CONFIDENCE
+      ),
       updatedAt: now(),
     },
     { merge: true }
@@ -717,7 +853,9 @@ exports.finishGmailOAuth = onCall(gmailSecretOptions, async (request) => {
   return { email: profile.emailAddress || "", sync };
 });
 
-exports.syncGmailTransactions = onCall(gmailSecretOptions, async (request) => {
+exports.syncGmailTransactions = onCall(
+  gmailRecognitionSecretOptions,
+  async (request) => {
   const uid = requireCallableAuth(request);
   try {
     return await syncGmailForUid(uid, { force: true, maxResults: 30 });
@@ -753,7 +891,7 @@ exports.disconnectGmailRadar = onCall(async (request) => {
 });
 
 exports.syncActiveGmailConnections = onSchedule(
-  { schedule: "every 10 minutes", secrets: gmailSecretOptions.secrets },
+  { schedule: "every 10 minutes", secrets: gmailRecognitionSecretOptions.secrets },
   async () => {
     const snap = await db
       .collectionGroup("privateIntegrations")
@@ -800,7 +938,7 @@ exports.syncActiveGmailConnections = onSchedule(
 exports.onGmailPushNotification = onMessagePublished(
   {
     topic: GMAIL_PUBSUB_TOPIC_ID,
-    secrets: gmailSecretOptions.secrets,
+    secrets: gmailRecognitionSecretOptions.secrets,
     retry: false,
   },
   async (event) => {

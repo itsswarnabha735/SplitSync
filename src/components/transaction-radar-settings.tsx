@@ -9,6 +9,7 @@ import {
   Play,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ export function TransactionRadarSettings() {
 
   const connected = settings?.gmailConnected === true;
   const scanStatus = settings?.scanStatus ?? "disconnected";
+  const visibleError = safeRadarError(oauthError || settings?.lastSyncError);
 
   async function updateRadar(patch: Partial<TransactionRadarSettings>) {
     if (!repo) return;
@@ -196,12 +198,12 @@ export function TransactionRadarSettings() {
         <TrustPoint
           icon={EyeOff}
           title="Structured storage"
-          body="SplitSync stores parsed fields, not long-lived raw email bodies."
+          body="Sanitized email text goes to AI only for recognition; raw emails are not stored or shared."
         />
         <TrustPoint
-          icon={MailCheck}
+          icon={Sparkles}
           title="Explainable nudges"
-          body="Each suggestion says why it matched a group or friend."
+          body="AI-recognized expenses show the exact evidence behind amount, merchant, and payment completion."
         />
       </div>
 
@@ -210,6 +212,14 @@ export function TransactionRadarSettings() {
           <Label>Connected Gmail account</Label>
           <p className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-sm font-semibold">
             {connected ? settings?.gmailEmail || user?.email || "Connected" : "Not connected"}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Recognition</Label>
+          <p className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-sm font-semibold">
+            {settings?.aiRecognitionEnabled === false
+              ? "Deterministic fallback"
+              : "AI high-precision"}
           </p>
         </div>
         <div className="space-y-1.5">
@@ -265,9 +275,9 @@ export function TransactionRadarSettings() {
         </div>
       </div>
 
-      {(oauthError || settings?.lastSyncError) && (
+      {visibleError && (
         <p className="rounded-xl border border-destructive/15 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
-          {oauthError || settings?.lastSyncError}
+          {visibleError}
         </p>
       )}
 
@@ -403,6 +413,18 @@ export function TransactionRadarSettings() {
       </div>
     </Card>
   );
+}
+
+function safeRadarError(message?: string | null) {
+  if (!message) return "";
+  if (
+    /firestore|value for argument|undefined|permission_denied|gemini|google_gemini|internal|stack|api key/i.test(
+      message
+    )
+  ) {
+    return "Gmail sync could not complete. Try again in a few minutes.";
+  }
+  return message;
 }
 
 function TrustPoint({

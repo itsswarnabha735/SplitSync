@@ -854,6 +854,29 @@ service cloud.firestore {
         && value.participantIds.size() <= 100;
     }
 
+    function isRecognitionEvidence(value) {
+      return value is map
+        && value.keys().hasOnly([
+          "amountText", "merchantText", "dateText", "completionText"
+        ])
+        && (
+          !("amountText" in value)
+          || isString(value.amountText, 120)
+        )
+        && (
+          !("merchantText" in value)
+          || isString(value.merchantText, 160)
+        )
+        && (
+          !("dateText" in value)
+          || isString(value.dateText, 120)
+        )
+        && (
+          !("completionText" in value)
+          || isString(value.completionText, 160)
+        );
+    }
+
     function isTransactionCandidateDoc(uid, candidateId) {
       return request.resource.data.keys().hasOnly([
           "id", "userId", "source", "sourceMessageId", "sourceThreadId",
@@ -863,7 +886,9 @@ service cloud.firestore {
           "candidateType", "status", "confidence", "parseConfidence",
           "contextConfidence", "duplicateConfidence", "suggestedTarget",
           "suggestedSplit", "duplicateExpensePath", "fingerprint",
-          "sourceRetentionExpiresAt", "createdExpensePath", "updatedAt"
+          "sourceRetentionExpiresAt", "createdExpensePath", "recognitionMode",
+          "recognitionModel", "recognitionVersion", "recognitionReasonCodes",
+          "recognitionEvidence", "sourceWarnings", "updatedAt"
         ])
         && request.resource.data.keys().hasAll([
           "id", "userId", "source", "sourceMessageId", "sourceThreadId",
@@ -918,6 +943,30 @@ service cloud.firestore {
         && (
           !("createdExpensePath" in request.resource.data)
           || isString(request.resource.data.createdExpensePath, 500)
+        )
+        && (
+          !("recognitionMode" in request.resource.data)
+          || request.resource.data.recognitionMode == "ai"
+        )
+        && (
+          !("recognitionModel" in request.resource.data)
+          || isString(request.resource.data.recognitionModel, 80)
+        )
+        && (
+          !("recognitionVersion" in request.resource.data)
+          || isString(request.resource.data.recognitionVersion, 40)
+        )
+        && (
+          !("recognitionReasonCodes" in request.resource.data)
+          || isOptionalStringList(request.resource.data.recognitionReasonCodes, 10)
+        )
+        && (
+          !("recognitionEvidence" in request.resource.data)
+          || isRecognitionEvidence(request.resource.data.recognitionEvidence)
+        )
+        && (
+          !("sourceWarnings" in request.resource.data)
+          || isOptionalStringList(request.resource.data.sourceWarnings, 10)
         )
         && (
           !("updatedAt" in request.resource.data)
@@ -995,7 +1044,8 @@ service cloud.firestore {
           "gmailConnected", "gmailEmail", "scanStatus", "retentionDays",
           "rawEmailRetention", "ignoredMerchants", "activeFilters",
           "updatedAt", "connectedAt", "lastSyncedAt", "lastSyncError",
-          "gmailWatchExpiresAt"
+          "gmailWatchExpiresAt", "aiRecognitionEnabled", "aiRecognitionModel",
+          "aiRecognitionMinConfidence"
         ])
         && request.resource.data.keys().hasAll([
           "gmailConnected", "gmailEmail", "scanStatus", "retentionDays",
@@ -1026,6 +1076,18 @@ service cloud.firestore {
         && (
           !("gmailWatchExpiresAt" in request.resource.data)
           || isMillis(request.resource.data.gmailWatchExpiresAt)
+        )
+        && (
+          !("aiRecognitionEnabled" in request.resource.data)
+          || request.resource.data.aiRecognitionEnabled is bool
+        )
+        && (
+          !("aiRecognitionModel" in request.resource.data)
+          || isString(request.resource.data.aiRecognitionModel, 80)
+        )
+        && (
+          !("aiRecognitionMinConfidence" in request.resource.data)
+          || isOptionalRatio(request.resource.data.aiRecognitionMinConfidence)
         );
     }
 

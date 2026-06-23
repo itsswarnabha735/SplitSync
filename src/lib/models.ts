@@ -393,6 +393,13 @@ export interface TransactionSuggestedSplit {
   participantIds: string[];
 }
 
+export interface TransactionRecognitionEvidence {
+  amountText?: string;
+  merchantText?: string;
+  dateText?: string;
+  completionText?: string;
+}
+
 export interface TransactionCandidate {
   id: string;
   userId: string;
@@ -422,6 +429,12 @@ export interface TransactionCandidate {
   fingerprint: string;
   sourceRetentionExpiresAt: number;
   createdExpensePath?: string;
+  recognitionMode?: "ai";
+  recognitionModel?: string;
+  recognitionVersion?: string;
+  recognitionReasonCodes?: string[];
+  recognitionEvidence?: TransactionRecognitionEvidence;
+  sourceWarnings?: string[];
   updatedAt?: number;
 }
 
@@ -460,6 +473,9 @@ export interface TransactionRadarSettings {
   lastSyncedAt?: number;
   lastSyncError?: string;
   gmailWatchExpiresAt?: number;
+  aiRecognitionEnabled?: boolean;
+  aiRecognitionModel?: string;
+  aiRecognitionMinConfidence?: number;
 }
 
 export type NotificationChannelPreference = {

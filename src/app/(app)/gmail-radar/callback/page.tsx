@@ -49,7 +49,7 @@ function CallbackContent() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Could not connect Gmail.");
+        setError(safeGmailCallbackError(err));
       });
     return () => {
       cancelled = true;
@@ -57,6 +57,19 @@ function CallbackContent() {
   }, [router, search]);
 
   return <CallbackShell status={status} error={error} />;
+}
+
+function safeGmailCallbackError(err: unknown) {
+  const message = err instanceof Error ? err.message : "";
+  if (
+    !message ||
+    /firestore|value for argument|undefined|permission_denied|gemini|google_gemini|internal|stack|api key/i.test(
+      message
+    )
+  ) {
+    return "Could not finish Gmail connection. Try again from Settings.";
+  }
+  return message;
 }
 
 function CallbackShell({

@@ -217,6 +217,19 @@ function suggestedSplit(v: unknown): TransactionCandidate["suggestedSplit"] {
     participantIds: stringArray(data.participantIds),
   };
 }
+function recognitionEvidence(
+  v: unknown
+): TransactionCandidate["recognitionEvidence"] {
+  if (!v || typeof v !== "object") return undefined;
+  const data = v as Record<string, unknown>;
+  const evidence = {
+    amountText: str(data.amountText) || undefined,
+    merchantText: str(data.merchantText) || undefined,
+    dateText: str(data.dateText) || undefined,
+    completionText: str(data.completionText) || undefined,
+  };
+  return Object.values(evidence).some(Boolean) ? evidence : undefined;
+}
 function ruleStatus(v: unknown): TransactionRuleStatus {
   const known: TransactionRuleStatus[] = [
     "suggest_only",
@@ -570,6 +583,12 @@ export function toTransactionCandidate(d: AnySnap): TransactionCandidate {
     fingerprint: str(data.fingerprint),
     sourceRetentionExpiresAt: num(data.sourceRetentionExpiresAt),
     createdExpensePath: str(data.createdExpensePath) || undefined,
+    recognitionMode: data.recognitionMode === "ai" ? "ai" : undefined,
+    recognitionModel: str(data.recognitionModel) || undefined,
+    recognitionVersion: str(data.recognitionVersion) || undefined,
+    recognitionReasonCodes: stringArray(data.recognitionReasonCodes),
+    recognitionEvidence: recognitionEvidence(data.recognitionEvidence),
+    sourceWarnings: stringArray(data.sourceWarnings),
     updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
   };
 }
@@ -622,6 +641,15 @@ export function toTransactionRadarSettings(
     gmailWatchExpiresAt:
       typeof data.gmailWatchExpiresAt === "number"
         ? data.gmailWatchExpiresAt
+        : undefined,
+    aiRecognitionEnabled:
+      typeof data.aiRecognitionEnabled === "boolean"
+        ? data.aiRecognitionEnabled
+        : undefined,
+    aiRecognitionModel: str(data.aiRecognitionModel) || undefined,
+    aiRecognitionMinConfidence:
+      typeof data.aiRecognitionMinConfidence === "number"
+        ? data.aiRecognitionMinConfidence
         : undefined,
   };
 }

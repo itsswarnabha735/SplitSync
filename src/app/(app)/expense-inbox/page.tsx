@@ -620,6 +620,7 @@ function CandidateList({
       {items.map((candidate) => {
         const target = resolveTarget(candidate);
         const editDraft = editing[candidate.id];
+        const evidenceRows = recognitionEvidenceRows(candidate.recognitionEvidence);
         const parsedAmount = editDraft ? Number(editDraft.amount) : candidate.amount;
         const canSaveEdit =
           !!editDraft &&
@@ -638,6 +639,12 @@ function CandidateList({
                     {statusLabel(candidate.status)}
                   </Badge>
                   <Badge variant="muted">Gmail</Badge>
+                  {candidate.recognitionMode === "ai" && (
+                    <Badge variant="success" className="gap-1">
+                      <Sparkles className="h-3 w-3" />
+                      AI recognized
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {formatMoney(candidate.amount, candidate.currency)} ·{" "}
@@ -673,9 +680,30 @@ function CandidateList({
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              Evidence: {candidate.rawSnippetRedacted}
-            </p>
+            {candidate.recognitionMode === "ai" && evidenceRows.length > 0 ? (
+              <div className="rounded-xl border border-success/15 bg-success/10 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                  <div className="min-w-0">
+                    <p className="font-bold">Why this suggestion?</p>
+                    <div className="mt-1 grid gap-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
+                      {evidenceRows.map((row) => (
+                        <p key={row.label} className="min-w-0">
+                          <span className="font-semibold text-foreground">
+                            {row.label}:
+                          </span>{" "}
+                          <span className="break-words">{row.value}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Evidence: {candidate.rawSnippetRedacted}
+              </p>
+            )}
 
             {editDraft && (
               <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/35 p-3 sm:grid-cols-[1.3fr_0.8fr_0.7fr_1fr_auto_auto]">
@@ -854,6 +882,21 @@ function EmptyInbox({ title, body }: { title: string; body: string }) {
         <p className="text-sm text-muted-foreground">{body}</p>
       </div>
     </Card>
+  );
+}
+
+function recognitionEvidenceRows(
+  evidence: TransactionCandidate["recognitionEvidence"]
+) {
+  if (!evidence) return [];
+  return [
+    { label: "Amount", value: evidence.amountText },
+    { label: "Merchant", value: evidence.merchantText },
+    { label: "Date", value: evidence.dateText },
+    { label: "Completion", value: evidence.completionText },
+  ].filter(
+    (row): row is { label: string; value: string } =>
+      typeof row.value === "string" && row.value.trim().length > 0
   );
 }
 
