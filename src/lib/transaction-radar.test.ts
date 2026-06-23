@@ -65,6 +65,23 @@ describe("transaction radar", () => {
     ).toBeNull();
   });
 
+  it("omits undefined optional fields when no payment instrument hint is found", () => {
+    const candidate = parseGmailTransactionCandidate(
+      {
+        messageId: "gmail-no-card",
+        sender: "receipts@example.com",
+        subject: "Payment receipt",
+        snippet: "Payment of INR 450 paid to Cafe Mondegar on 2026-06-22.",
+        receivedAt: now,
+      },
+      { userId: "u1", now }
+    );
+
+    expect(candidate).not.toBeNull();
+    expect(candidate).not.toHaveProperty("paymentInstrumentHint");
+    expect(Object.values(candidate!)).not.toContain(undefined);
+  });
+
   it("boosts active trip groups and suggests equal group split", () => {
     const candidate = parseGmailTransactionCandidate(
       {

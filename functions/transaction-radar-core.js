@@ -185,6 +185,7 @@ function parseGmailTransactionCandidate(input, options) {
     transactionAt,
     sourceSender: input.sender,
   });
+  const paymentInstrumentHint = derivePaymentInstrumentHint(compact);
   return {
     id: input.messageId,
     userId: options.userId,
@@ -200,7 +201,7 @@ function parseGmailTransactionCandidate(input, options) {
     currency: amountMatch.currency,
     transactionAt,
     detectedAt: now,
-    paymentInstrumentHint: derivePaymentInstrumentHint(compact),
+    ...(paymentInstrumentHint ? { paymentInstrumentHint } : {}),
     category: "other",
     candidateType,
     status,

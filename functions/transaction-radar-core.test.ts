@@ -50,4 +50,20 @@ describe("transaction-radar-core", () => {
     );
     expect(candidate).toBeNull();
   });
+
+  it("omits undefined optional fields when no payment instrument hint is found", () => {
+    const candidate = parseGmailTransactionCandidate(
+      {
+        messageId: "no-card",
+        sender: "receipts@example.com",
+        subject: "Payment receipt",
+        snippet: "Payment of INR 450 paid to Cafe Mondegar on 2026-06-22.",
+      },
+      { userId: "u1", now: new Date("2026-06-22T10:00:00Z").getTime() }
+    );
+
+    expect(candidate).not.toBeNull();
+    expect(candidate).not.toHaveProperty("paymentInstrumentHint");
+    expect(Object.values(candidate!)).not.toContain(undefined);
+  });
 });

@@ -62,6 +62,20 @@ function dataOf(snapshot) {
   return snapshot?.data() || {};
 }
 
+function withoutUndefined(value) {
+  if (Array.isArray(value)) {
+    return value.map(withoutUndefined).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).reduce((out, [key, item]) => {
+      const cleaned = withoutUndefined(item);
+      if (cleaned !== undefined) out[key] = cleaned;
+      return out;
+    }, {});
+  }
+  return value === undefined ? undefined : value;
+}
+
 function normalizeEmail(email) {
   return (email || "").trim().toLowerCase();
 }
@@ -600,7 +614,7 @@ async function syncGmailForUid(uid, options = {}) {
       skipped += 1;
       continue;
     }
-    await candidateRef.set(candidate);
+    await candidateRef.set(withoutUndefined(candidate));
     created += 1;
   }
   await radarSettingsRef(uid).set(

@@ -107,6 +107,7 @@ export function parseGmailTransactionCandidate(
   });
   const status: TransactionCandidateStatus =
     candidateType === "spend" && parseConfidence >= 0.68 ? "suggested" : "new";
+  const paymentInstrumentHint = derivePaymentInstrumentHint(compact);
 
   return {
     id: input.messageId,
@@ -123,7 +124,7 @@ export function parseGmailTransactionCandidate(
     currency: amountMatch.currency,
     transactionAt,
     detectedAt: now,
-    paymentInstrumentHint: derivePaymentInstrumentHint(compact),
+    ...(paymentInstrumentHint ? { paymentInstrumentHint } : {}),
     category,
     candidateType,
     status,
