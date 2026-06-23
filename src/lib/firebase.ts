@@ -1,6 +1,11 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, connectAuthEmulator, type Auth } from "firebase/auth";
 import {
+  getFunctions,
+  connectFunctionsEmulator,
+  type Functions,
+} from "firebase/functions";
+import {
   initializeFirestore,
   persistentLocalCache,
   connectFirestoreEmulator,
@@ -95,6 +100,7 @@ let configError: FirebaseConfigError | null = null;
 let firebaseApp: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let functions: Functions | null = null;
 
 const badKeys = invalidConfigKeys();
 if (badKeys.length > 0) {
@@ -109,6 +115,10 @@ if (badKeys.length > 0) {
     firebaseApp = createApp();
     db = createFirestore(firebaseApp);
     auth = getAuth(firebaseApp);
+    functions = getFunctions(
+      firebaseApp,
+      process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION || "us-central1"
+    );
   } catch (err) {
     configError = {
       title: "Firebase setup failed",
@@ -136,6 +146,7 @@ if (
       disableWarnings: true,
     });
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    if (functions) connectFunctionsEmulator(functions, "127.0.0.1", 5001);
   } catch {
     // Already connected on a previous hot-reload; safe to ignore.
   }
@@ -162,4 +173,11 @@ export function getFirestoreDb(): Firestore {
     throw new Error(configError?.message ?? "Firestore is unavailable.");
   }
   return db;
+}
+
+export function getFirebaseFunctions(): Functions {
+  if (!functions) {
+    throw new Error(configError?.message ?? "Firebase Functions is unavailable.");
+  }
+  return functions;
 }

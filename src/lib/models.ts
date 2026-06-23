@@ -38,14 +38,50 @@ export type ExpenseSourceType =
   | "ai-text"
   | "pasted-message"
   | "receipt-image"
+  | "gmail"
   | "manual";
 export type StatementParserMode = "ai-assisted" | "local-only";
+export type TransactionCandidateSource = "gmail";
+export type TransactionCandidateType =
+  | "spend"
+  | "refund"
+  | "transfer"
+  | "cash-withdrawal"
+  | "unknown";
+export type TransactionCandidateStatus =
+  | "new"
+  | "suggested"
+  | "added"
+  | "personal"
+  | "ignored"
+  | "duplicate"
+  | "expired";
+export type TransactionSuggestedTargetKind = "group" | "friend";
+export type TransactionRadarReasonCode =
+  | "active_trip_dates"
+  | "merchant_seen_in_group"
+  | "same_currency_as_group"
+  | "recent_group_activity"
+  | "user_rule_match"
+  | "friend_recently_split"
+  | "category_common_for_group";
+export type TransactionRuleStatus =
+  | "suggest_only"
+  | "auto_prepare"
+  | "auto_add_with_undo"
+  | "paused";
+export type TransactionRuleTargetKind = "group" | "friend";
+export type TransactionRuleSplitPreset = "equal" | "payer-only" | "last-used";
+export type TransactionRadarScanStatus = "active" | "paused" | "disconnected";
+export type TransactionRadarRawRetention = "none" | "24h" | "until-reviewed";
 
 export interface ExpenseImportProvenance {
   /** Present when this expense was created from an imported statement row. */
   sourceType?: ExpenseSourceType;
   /** Client-generated id shared by every expense from the same import run. */
   importBatchId?: string;
+  /** Present when this expense was confirmed from a private transaction candidate. */
+  transactionCandidateId?: string;
   /** Deterministic row fingerprint used to warn about duplicate imports. */
   transactionFingerprint?: string;
   /** Whether parsing used Gemini or local regex/OCR only. */
@@ -69,6 +105,8 @@ export interface Group {
   defaultCurrency?: string;
   settlementCurrency?: string;
   travelMode?: boolean;
+  tripStartAt?: number;
+  tripEndAt?: number;
 }
 
 export interface GroupMember {
@@ -319,7 +357,8 @@ export type NotificationType =
   | "adhoc_expense_created"
   | "adhoc_expense_deleted"
   | "adhoc_settlement_created"
-  | "adhoc_settlement_deleted";
+  | "adhoc_settlement_deleted"
+  | "transaction_candidate_detected";
 
 export interface Notification {
   id: string;
@@ -339,6 +378,88 @@ export interface Notification {
     amount?: number;
     tags?: string[];
   };
+}
+
+export interface TransactionSuggestedTarget {
+  kind: TransactionSuggestedTargetKind;
+  targetId: string;
+  targetName: string;
+  reasonCodes: TransactionRadarReasonCode[];
+  confidence: number;
+}
+
+export interface TransactionSuggestedSplit {
+  splitType: SplitType;
+  participantIds: string[];
+}
+
+export interface TransactionCandidate {
+  id: string;
+  userId: string;
+  source: TransactionCandidateSource;
+  sourceMessageId: string;
+  sourceThreadId: string;
+  sourceSender: string;
+  sourceSubjectHash: string;
+  rawSnippetRedacted: string;
+  merchant: string;
+  normalizedMerchant: string;
+  amount: number;
+  currency: string;
+  transactionAt: number;
+  detectedAt: number;
+  paymentInstrumentHint?: string;
+  category?: ExpenseCategorySlug;
+  candidateType: TransactionCandidateType;
+  status: TransactionCandidateStatus;
+  confidence: number;
+  parseConfidence: number;
+  contextConfidence: number;
+  duplicateConfidence: number;
+  suggestedTarget?: TransactionSuggestedTarget;
+  suggestedSplit?: TransactionSuggestedSplit;
+  duplicateExpensePath?: string;
+  fingerprint: string;
+  sourceRetentionExpiresAt: number;
+  createdExpensePath?: string;
+  updatedAt?: number;
+}
+
+export interface TransactionRule {
+  id: string;
+  userId: string;
+  status: TransactionRuleStatus;
+  merchantPattern: string;
+  senderPattern: string;
+  category?: ExpenseCategorySlug;
+  amountMin?: number;
+  amountMax?: number;
+  currency?: string;
+  targetKind?: TransactionRuleTargetKind;
+  targetId?: string;
+  splitPreset: TransactionRuleSplitPreset;
+  activeFrom?: number;
+  activeUntil?: number;
+  createdFromCandidateId?: string;
+  lastTriggeredAt?: number;
+  triggerCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TransactionRadarSettings {
+  gmailConnected: boolean;
+  gmailEmail: string;
+  scanStatus: TransactionRadarScanStatus;
+  retentionDays: number;
+  rawEmailRetention: TransactionRadarRawRetention;
+  ignoredMerchants: string[];
+  activeFilters: string[];
+  updatedAt: number;
+  connectedAt?: number;
+  lastSyncedAt?: number;
+  lastSyncError?: string;
+  gmailWatchExpiresAt?: number;
 }
 
 export type NotificationChannelPreference = {

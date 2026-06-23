@@ -23,7 +23,16 @@ self.addEventListener("install", () => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(openTarget(event.notification.data?.url));
+  const data = event.notification.data || {};
+  if (data.type === "transaction_candidate_detected" && data.candidateId) {
+    const action = event.action || "review";
+    const url = new URL("/expense-inbox", self.location.origin);
+    url.searchParams.set("candidateId", data.candidateId);
+    if (action) url.searchParams.set("candidateAction", action);
+    event.waitUntil(openTarget(url.pathname + url.search));
+    return;
+  }
+  event.waitUntil(openTarget(data.url));
 });
 
 messagingReady = fetch("/api/firebase-config")
@@ -33,11 +42,22 @@ messagingReady = fetch("/api/firebase-config")
     const messaging = firebase.messaging();
     messaging.onBackgroundMessage((payload) => {
       const data = payload.data || {};
+      const isRadar = data.type === "transaction_candidate_detected";
       self.registration.showNotification(data.title || "SplitSync", {
         body: data.body || "You have a new notification.",
+        actions: isRadar
+          ? [
+              { action: "add", title: "Add" },
+              { action: "edit", title: "Edit" },
+              { action: "personal", title: "Personal" },
+              { action: "ignore", title: "Ignore" },
+            ]
+          : undefined,
         data: {
           url: data.url || "/dashboard",
           notificationId: data.notificationId,
+          type: data.type,
+          candidateId: data.candidateId,
         },
       });
     });

@@ -1,11 +1,14 @@
 "use strict";
 
 const admin = require("firebase-admin");
+const crypto = require("node:crypto");
 const {
   onDocumentCreatedWithAuthContext,
   onDocumentDeletedWithAuthContext,
   onDocumentUpdatedWithAuthContext,
 } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {
   notificationDocId,
@@ -19,6 +22,11 @@ const {
   shouldHandleSourceAdHocDelete,
   sourcePathForAdHocMirrorDelete,
 } = require("./notification-core");
+const {
+  GMAIL_QUERY,
+  gmailMessageToInput,
+  parseGmailTransactionCandidate,
+} = require("./transaction-radar-core");
 
 admin.initializeApp();
 
@@ -98,6 +106,7 @@ const ADHOC_EXPENSE_SYNC_FIELDS = [
   "createdByUid",
   "category",
   "sourceType",
+  "transactionCandidateId",
   "importBatchId",
   "transactionFingerprint",
   "parserMode",
@@ -208,6 +217,10 @@ async function sendPush(uid, notificationId, payload) {
           url: payload.targetUrl,
           notificationId,
           type: payload.type,
+          candidateId:
+            payload.type === "transaction_candidate_detected"
+              ? payload.source?.id || ""
+              : "",
         },
         webpush: {
           headers: {
@@ -258,6 +271,290 @@ function source(collection, id, extra = {}) {
   return { collection, id, ...extra };
 }
 
+function requireCallableAuth(request) {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in before using Gmail Radar.");
+  }
+  return uid;
+}
+
+function gmailConfig() {
+  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET;
+  const redirectUri = process.env.GMAIL_OAUTH_REDIRECT_URI;
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Gmail OAuth is not configured on the server."
+    );
+  }
+  return { clientId, clientSecret, redirectUri };
+}
+
+function stateSecret() {
+  return (
+    process.env.GMAIL_OAUTH_STATE_SECRET ||
+    process.env.GMAIL_TOKEN_ENCRYPTION_KEY ||
+    process.env.GMAIL_OAUTH_CLIENT_SECRET ||
+    "splitsync-local-gmail-state"
+  );
+}
+
+function signState(uid) {
+  const payload = Buffer.from(
+    JSON.stringify({
+      uid,
+      nonce: crypto.randomBytes(12).toString("base64url"),
+      iat: now(),
+    })
+  ).toString("base64url");
+  const sig = crypto
+    .createHmac("sha256", stateSecret())
+    .update(payload)
+    .digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyState(state, uid) {
+  const [payload, sig] = String(state || "").split(".");
+  if (!payload || !sig) return false;
+  const expected = crypto
+    .createHmac("sha256", stateSecret())
+    .update(payload)
+    .digest("base64url");
+  const left = Buffer.from(sig);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return parsed.uid === uid && now() - (parsed.iat || 0) < 15 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+function tokenCipherKey() {
+  const raw =
+    process.env.GMAIL_TOKEN_ENCRYPTION_KEY ||
+    process.env.GMAIL_OAUTH_CLIENT_SECRET ||
+    "splitsync-local-token-key";
+  return crypto.createHash("sha256").update(raw).digest();
+}
+
+function sealSecret(value) {
+  if (!value) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", tokenCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
+}
+
+function openSecret(value) {
+  if (!value) return "";
+  const [prefix, version, ivRaw, tagRaw, encryptedRaw] = String(value).split(":");
+  if (prefix !== "enc" || version !== "v1") return String(value);
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    tokenCipherKey(),
+    Buffer.from(ivRaw, "base64url")
+  );
+  decipher.setAuthTag(Buffer.from(tagRaw, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(encryptedRaw, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function gmailIntegrationRef(uid) {
+  return db.doc(`users/${uid}/privateIntegrations/gmail`);
+}
+
+function radarSettingsRef(uid) {
+  return db.doc(`users/${uid}/transactionRadarSettings/default`);
+}
+
+async function exchangeGmailCode(code) {
+  const { clientId, clientSecret, redirectUri } = gmailConfig();
+  const body = new URLSearchParams({
+    code,
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri,
+    grant_type: "authorization_code",
+  });
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpsError(
+      "permission-denied",
+      data.error_description || data.error || "Google rejected the Gmail authorization code."
+    );
+  }
+  return data;
+}
+
+async function refreshGmailAccessToken(uid, integration) {
+  if (
+    integration.accessToken &&
+    (integration.accessTokenExpiresAt || 0) > now() + 60 * 1000
+  ) {
+    return openSecret(integration.accessToken);
+  }
+  const { clientId, clientSecret } = gmailConfig();
+  const refreshToken = openSecret(integration.refreshToken);
+  if (!refreshToken) {
+    throw new HttpsError("failed-precondition", "Reconnect Gmail to refresh access.");
+  }
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new HttpsError(
+      "permission-denied",
+      data.error_description || data.error || "Could not refresh Gmail access."
+    );
+  }
+  await gmailIntegrationRef(uid).set(
+    {
+      accessToken: sealSecret(data.access_token),
+      accessTokenExpiresAt: now() + (data.expires_in || 3600) * 1000,
+      updatedAt: now(),
+    },
+    { merge: true }
+  );
+  return data.access_token;
+}
+
+async function gmailApi(accessToken, path, options = {}) {
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`);
+  for (const [key, value] of Object.entries(options.query || {})) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpsError(
+      "unavailable",
+      data.error?.message || `Gmail API failed for ${path}.`
+    );
+  }
+  return data;
+}
+
+async function ensureGmailWatch(uid, accessToken) {
+  const topicName = process.env.GMAIL_PUBSUB_TOPIC;
+  if (!topicName) return null;
+  const watch = await gmailApi(accessToken, "watch", {
+    method: "POST",
+    body: {
+      topicName,
+      labelIds: ["INBOX"],
+    },
+  });
+  const expiresAt = Number(watch.expiration || 0);
+  await Promise.all([
+    gmailIntegrationRef(uid).set(
+      {
+        historyId: watch.historyId || "",
+        gmailWatchExpiresAt: expiresAt,
+        updatedAt: now(),
+      },
+      { merge: true }
+    ),
+    radarSettingsRef(uid).set(
+      {
+        gmailWatchExpiresAt: expiresAt,
+        updatedAt: now(),
+      },
+      { merge: true }
+    ),
+  ]);
+  return watch;
+}
+
+async function syncGmailForUid(uid, options = {}) {
+  const integrationSnap = await gmailIntegrationRef(uid).get();
+  if (!integrationSnap.exists) {
+    throw new HttpsError("failed-precondition", "Connect Gmail before syncing.");
+  }
+  const settingsSnap = await radarSettingsRef(uid).get();
+  const settings = settingsSnap.exists ? dataOf(settingsSnap) : {};
+  if (settings.scanStatus === "paused" && !options.force) {
+    return { scanned: 0, created: 0, skipped: 0, paused: true };
+  }
+  const integration = dataOf(integrationSnap);
+  const accessToken = await refreshGmailAccessToken(uid, integration);
+  const messageList = await gmailApi(accessToken, "messages", {
+    query: {
+      q: process.env.GMAIL_RADAR_QUERY || GMAIL_QUERY,
+      maxResults: options.maxResults || 25,
+    },
+  });
+  const ignored = new Set(settings.ignoredMerchants || []);
+  let scanned = 0;
+  let created = 0;
+  let skipped = 0;
+  for (const item of messageList.messages || []) {
+    scanned += 1;
+    const candidateRef = db.doc(`users/${uid}/transactionCandidates/${item.id}`);
+    const existing = await candidateRef.get();
+    if (existing.exists) {
+      skipped += 1;
+      continue;
+    }
+    const message = await gmailApi(accessToken, `messages/${item.id}`, {
+      query: { format: "full" },
+    });
+    const candidate = parseGmailTransactionCandidate(gmailMessageToInput(message), {
+      userId: uid,
+      now: now(),
+      retentionDays: settings.retentionDays || 30,
+    });
+    if (!candidate || ignored.has(candidate.normalizedMerchant)) {
+      skipped += 1;
+      continue;
+    }
+    await candidateRef.set(candidate);
+    created += 1;
+  }
+  await radarSettingsRef(uid).set(
+    {
+      gmailConnected: true,
+      scanStatus: "active",
+      lastSyncedAt: now(),
+      lastSyncError: "",
+      updatedAt: now(),
+    },
+    { merge: true }
+  );
+  return { scanned, created, skipped, paused: false };
+}
+
 async function notifyGroupMembers(ctx, excludedUid, payloadFactory) {
   await Promise.all(
     linkedMembers(ctx)
@@ -265,6 +562,177 @@ async function notifyGroupMembers(ctx, excludedUid, payloadFactory) {
       .map((member) => dispatchTo(member.linkedUid, payloadFactory(member)))
   );
 }
+
+exports.createGmailOAuthUrl = onCall(async (request) => {
+  const uid = requireCallableAuth(request);
+  const { clientId, redirectUri } = gmailConfig();
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("scope", "https://www.googleapis.com/auth/gmail.readonly");
+  url.searchParams.set("state", signState(uid));
+  return { url: url.toString() };
+});
+
+exports.finishGmailOAuth = onCall(async (request) => {
+  const uid = requireCallableAuth(request);
+  const code = String(request.data?.code || "");
+  const state = String(request.data?.state || "");
+  if (!code || !verifyState(state, uid)) {
+    throw new HttpsError("invalid-argument", "Invalid Gmail OAuth callback.");
+  }
+  const token = await exchangeGmailCode(code);
+  const existing = await gmailIntegrationRef(uid).get();
+  const existingData = existing.exists ? dataOf(existing) : {};
+  const refreshToken = token.refresh_token
+    ? sealSecret(token.refresh_token)
+    : existingData.refreshToken || "";
+  if (!refreshToken) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Google did not return a refresh token. Reconnect Gmail and approve offline access."
+    );
+  }
+  const profile = await gmailApi(token.access_token, "profile");
+  await gmailIntegrationRef(uid).set(
+    {
+      provider: "gmail",
+      gmailEmail: profile.emailAddress || "",
+      refreshToken,
+      accessToken: sealSecret(token.access_token),
+      accessTokenExpiresAt: now() + (token.expires_in || 3600) * 1000,
+      scope: token.scope || "",
+      connectedAt: existingData.connectedAt || now(),
+      updatedAt: now(),
+    },
+    { merge: true }
+  );
+  await radarSettingsRef(uid).set(
+    {
+      gmailConnected: true,
+      gmailEmail: profile.emailAddress || "",
+      scanStatus: "active",
+      retentionDays: 30,
+      rawEmailRetention: "24h",
+      ignoredMerchants: [],
+      activeFilters: [
+        "bank-alerts",
+        "card-receipts",
+        "upi-confirmations",
+        "merchant-receipts",
+      ],
+      connectedAt: now(),
+      lastSyncError: "",
+      updatedAt: now(),
+    },
+    { merge: true }
+  );
+  await ensureGmailWatch(uid, token.access_token).catch((err) => {
+    logger.warn("Gmail watch setup failed", { uid, error: err.message });
+  });
+  const sync = await syncGmailForUid(uid, { force: true, maxResults: 20 }).catch((err) => {
+    logger.warn("Initial Gmail sync failed", { uid, error: err.message });
+    return { scanned: 0, created: 0, skipped: 0, initialSyncError: err.message };
+  });
+  return { email: profile.emailAddress || "", sync };
+});
+
+exports.syncGmailTransactions = onCall(async (request) => {
+  const uid = requireCallableAuth(request);
+  try {
+    return await syncGmailForUid(uid, { force: true, maxResults: 30 });
+  } catch (err) {
+    await radarSettingsRef(uid).set(
+      {
+        lastSyncError: err.message || "Could not sync Gmail.",
+        updatedAt: now(),
+      },
+      { merge: true }
+    );
+    throw err;
+  }
+});
+
+exports.disconnectGmailRadar = onCall(async (request) => {
+  const uid = requireCallableAuth(request);
+  await Promise.all([
+    gmailIntegrationRef(uid).delete(),
+    radarSettingsRef(uid).set(
+      {
+        gmailConnected: false,
+        gmailEmail: "",
+        scanStatus: "disconnected",
+        lastSyncError: "",
+        gmailWatchExpiresAt: 0,
+        updatedAt: now(),
+      },
+      { merge: true }
+    ),
+  ]);
+  return { disconnected: true };
+});
+
+exports.syncActiveGmailConnections = onSchedule("every 10 minutes", async () => {
+  const snap = await db
+    .collectionGroup("privateIntegrations")
+    .where("provider", "==", "gmail")
+    .limit(100)
+    .get();
+  await Promise.all(
+    snap.docs.map(async (docSnap) => {
+      const match = docSnap.ref.path.match(/^users\/([^/]+)\/privateIntegrations\/gmail$/);
+      const uid = match?.[1];
+      if (!uid) return;
+      try {
+        const integration = dataOf(docSnap);
+        const accessToken = await refreshGmailAccessToken(uid, integration);
+        if (
+          process.env.GMAIL_PUBSUB_TOPIC &&
+          (!integration.gmailWatchExpiresAt ||
+            integration.gmailWatchExpiresAt < now() + 24 * 60 * 60 * 1000)
+        ) {
+          await ensureGmailWatch(uid, accessToken);
+        }
+        await syncGmailForUid(uid, { maxResults: 15 });
+      } catch (err) {
+        logger.warn("Scheduled Gmail sync failed", { uid, error: err.message });
+        await radarSettingsRef(uid).set(
+          {
+            lastSyncError: err.message || "Scheduled Gmail sync failed.",
+            updatedAt: now(),
+          },
+          { merge: true }
+        );
+      }
+    })
+  );
+});
+
+exports.cleanupExpiredTransactionCandidates = onSchedule("every 24 hours", async () => {
+  const snap = await db
+    .collectionGroup("transactionCandidates")
+    .where("sourceRetentionExpiresAt", "<=", now())
+    .limit(300)
+    .get();
+  const batch = db.batch();
+  let count = 0;
+  snap.docs.forEach((docSnap) => {
+    const data = dataOf(docSnap);
+    if (data.status === "added" || data.status === "expired") return;
+    batch.update(docSnap.ref, {
+      status: "expired",
+      rawSnippetRedacted: "[expired]",
+      updatedAt: now(),
+    });
+    count += 1;
+  });
+  if (count > 0) await batch.commit();
+  logger.info("Expired Transaction Radar candidates", { count });
+});
 
 async function isGroupSettled(groupId, currency) {
   const ctx = await groupContext(groupId);
@@ -730,6 +1198,37 @@ exports.onFriendCreated = onDocumentCreatedWithAuthContext(
       targetUrl: "/dashboard",
       eventId: `users/${event.params.uid}/friends/${event.params.friendId}:created`,
       source: source("friends", event.params.friendId),
+    });
+  }
+);
+
+exports.onTransactionCandidateCreated = onDocumentCreatedWithAuthContext(
+  "users/{uid}/transactionCandidates/{candidateId}",
+  async (event) => {
+    const candidate = dataOf(event.data);
+    if (candidate.status !== "suggested") return;
+    if ((candidate.confidence || 0) < 0.75) return;
+
+    const targetName = candidate.suggestedTarget?.targetName;
+    const merchant = candidate.merchant || "Transaction";
+    const amount = formatMoney(candidate.amount, candidate.currency);
+    const body = targetName
+      ? `${merchant} ${amount} detected. Add to ${targetName}?`
+      : `${merchant} ${amount} detected. Review in Expense Inbox.`;
+
+    await dispatchTo(event.params.uid, {
+      type: "transaction_candidate_detected",
+      title: "Possible shared expense",
+      body,
+      actorUid: event.params.uid,
+      targetUrl: "/expense-inbox",
+      eventId: `users/${event.params.uid}/transactionCandidates/${event.params.candidateId}:created`,
+      source: source("transactionCandidates", event.params.candidateId, {
+        currency: candidate.currency,
+        amount: candidate.amount,
+        targetKind: candidate.suggestedTarget?.kind || "",
+        targetId: candidate.suggestedTarget?.targetId || "",
+      }),
     });
   }
 );

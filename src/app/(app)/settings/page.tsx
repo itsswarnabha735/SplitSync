@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
 import { NotificationSettings } from "@/components/notification-settings";
+import { TransactionRadarSettings } from "@/components/transaction-radar-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,6 +26,7 @@ export default function SettingsPage() {
 
       <main id="main-content" className="container space-y-5 py-6">
         <NotificationSettings />
+        <TransactionRadarSettings />
 
         <Card className="space-y-4 border-primary/10 p-5">
           <div className="flex items-center gap-3">

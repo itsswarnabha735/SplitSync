@@ -6,6 +6,7 @@ import { Plus, Trash2, UserRound, UserPlus } from "lucide-react";
 
 import type { GroupTemplate } from "@/lib/models";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { dateInputToLocalTimestamp } from "@/lib/dates";
 import {
   GROUP_TEMPLATE_OPTIONS,
   groupTemplateOption,
@@ -35,6 +36,8 @@ export default function CreateGroupPage() {
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
   const [settlementCurrency, setSettlementCurrency] = useState("USD");
   const [travelMode, setTravelMode] = useState(false);
+  const [tripStart, setTripStart] = useState("");
+  const [tripEnd, setTripEnd] = useState("");
   // Selectable friend slots (by friend id). The creator is implicit.
   const [memberIds, setMemberIds] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +88,14 @@ export default function CreateGroupPage() {
             defaultCurrency,
             settlementCurrency,
             travelMode,
+            tripStartAt:
+              travelMode && tripStart
+                ? dateInputToLocalTimestamp(tripStart) ?? undefined
+                : undefined,
+            tripEndAt:
+              travelMode && tripEnd
+                ? dateInputToLocalTimestamp(tripEnd) ?? undefined
+                : undefined,
           }),
         {
           loading: "Creating group...",
@@ -209,6 +220,28 @@ export default function CreateGroupPage() {
                 </span>
               </span>
             </label>
+            {travelMode && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="group-trip-start">Trip starts</Label>
+                  <Input
+                    id="group-trip-start"
+                    type="date"
+                    value={tripStart}
+                    onChange={(event) => setTripStart(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="group-trip-end">Trip ends</Label>
+                  <Input
+                    id="group-trip-end"
+                    type="date"
+                    value={tripEnd}
+                    onChange={(event) => setTripEnd(event.target.value)}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </Card>
 

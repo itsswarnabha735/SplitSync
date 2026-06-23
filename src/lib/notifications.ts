@@ -17,6 +17,7 @@ export const NOTIFICATION_EVENT_LABELS: Record<NotificationType, string> = {
   adhoc_expense_deleted: "Deleted friend expenses",
   adhoc_settlement_created: "Friend settlements",
   adhoc_settlement_deleted: "Deleted friend settlements",
+  transaction_candidate_detected: "Transaction Radar",
 };
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreference = {

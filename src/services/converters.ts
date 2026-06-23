@@ -27,6 +27,18 @@ import {
   ExpenseSourceType,
   StatementParserMode,
   SplitType,
+  TransactionCandidate,
+  TransactionCandidateStatus,
+  TransactionCandidateType,
+  TransactionRadarReasonCode,
+  TransactionRadarRawRetention,
+  TransactionRadarScanStatus,
+  TransactionRadarSettings,
+  TransactionRule,
+  TransactionRuleSplitPreset,
+  TransactionRuleStatus,
+  TransactionRuleTargetKind,
+  TransactionSuggestedTargetKind,
 } from "@/lib/models";
 import { isExpenseCategorySlug } from "@/lib/expense-categories";
 
@@ -58,6 +70,7 @@ function sourceType(v: unknown): ExpenseSourceType | undefined {
     "ai-text",
     "pasted-message",
     "receipt-image",
+    "gmail",
     "manual",
   ];
   return typeof v === "string" && known.includes(v as ExpenseSourceType)
@@ -127,10 +140,105 @@ function notificationType(v: unknown): NotificationType {
     "adhoc_expense_deleted",
     "adhoc_settlement_created",
     "adhoc_settlement_deleted",
+    "transaction_candidate_detected",
   ];
   return typeof v === "string" && known.includes(v as NotificationType)
     ? (v as NotificationType)
     : "group_expense_created";
+}
+function candidateType(v: unknown): TransactionCandidateType {
+  const known: TransactionCandidateType[] = [
+    "spend",
+    "refund",
+    "transfer",
+    "cash-withdrawal",
+    "unknown",
+  ];
+  return typeof v === "string" && known.includes(v as TransactionCandidateType)
+    ? (v as TransactionCandidateType)
+    : "unknown";
+}
+function candidateStatus(v: unknown): TransactionCandidateStatus {
+  const known: TransactionCandidateStatus[] = [
+    "new",
+    "suggested",
+    "added",
+    "personal",
+    "ignored",
+    "duplicate",
+    "expired",
+  ];
+  return typeof v === "string" && known.includes(v as TransactionCandidateStatus)
+    ? (v as TransactionCandidateStatus)
+    : "new";
+}
+function suggestedTargetKind(v: unknown): TransactionSuggestedTargetKind {
+  return v === "friend" ? "friend" : "group";
+}
+function reasonCodes(v: unknown): TransactionRadarReasonCode[] {
+  const known: TransactionRadarReasonCode[] = [
+    "active_trip_dates",
+    "merchant_seen_in_group",
+    "same_currency_as_group",
+    "recent_group_activity",
+    "user_rule_match",
+    "friend_recently_split",
+    "category_common_for_group",
+  ];
+  return Array.isArray(v)
+    ? (v.filter(
+        (item): item is TransactionRadarReasonCode =>
+          typeof item === "string" &&
+          known.includes(item as TransactionRadarReasonCode)
+      ))
+    : [];
+}
+function suggestedTarget(v: unknown): TransactionCandidate["suggestedTarget"] {
+  if (!v || typeof v !== "object") return undefined;
+  const data = v as Record<string, unknown>;
+  const targetId = str(data.targetId);
+  if (!targetId) return undefined;
+  return {
+    kind: suggestedTargetKind(data.kind),
+    targetId,
+    targetName: str(data.targetName),
+    reasonCodes: reasonCodes(data.reasonCodes),
+    confidence:
+      typeof data.confidence === "number"
+        ? Math.max(0, Math.min(1, data.confidence))
+        : 0,
+  };
+}
+function suggestedSplit(v: unknown): TransactionCandidate["suggestedSplit"] {
+  if (!v || typeof v !== "object") return undefined;
+  const data = v as Record<string, unknown>;
+  return {
+    splitType: splitType(data.splitType),
+    participantIds: stringArray(data.participantIds),
+  };
+}
+function ruleStatus(v: unknown): TransactionRuleStatus {
+  const known: TransactionRuleStatus[] = [
+    "suggest_only",
+    "auto_prepare",
+    "auto_add_with_undo",
+    "paused",
+  ];
+  return typeof v === "string" && known.includes(v as TransactionRuleStatus)
+    ? (v as TransactionRuleStatus)
+    : "suggest_only";
+}
+function ruleTargetKind(v: unknown): TransactionRuleTargetKind | undefined {
+  return v === "group" || v === "friend" ? v : undefined;
+}
+function splitPreset(v: unknown): TransactionRuleSplitPreset {
+  return v === "payer-only" || v === "last-used" ? v : "equal";
+}
+function scanStatus(v: unknown): TransactionRadarScanStatus {
+  return v === "active" || v === "paused" ? v : "disconnected";
+}
+function rawRetention(v: unknown): TransactionRadarRawRetention {
+  return v === "none" || v === "until-reviewed" ? v : "24h";
 }
 function stringArray(v: unknown): string[] {
   return Array.isArray(v)
@@ -186,6 +294,8 @@ export function toGroup(d: AnySnap): Group {
       str(data.defaultCurrency, "USD")
     ),
     travelMode: data.travelMode === true,
+    tripStartAt: typeof data.tripStartAt === "number" ? data.tripStartAt : undefined,
+    tripEndAt: typeof data.tripEndAt === "number" ? data.tripEndAt : undefined,
   };
 }
 
@@ -219,6 +329,7 @@ export function toExpense(d: AnySnap): Expense {
     category: category(data.category),
     sourceType: sourceType(data.sourceType),
     importBatchId: str(data.importBatchId) || undefined,
+    transactionCandidateId: str(data.transactionCandidateId) || undefined,
     transactionFingerprint: str(data.transactionFingerprint) || undefined,
     parserMode: parserMode(data.parserMode),
     parserConfidence:
@@ -352,6 +463,7 @@ export function toAdHocExpense(d: AnySnap): AdHocExpense {
     category: category(data.category),
     sourceType: sourceType(data.sourceType),
     importBatchId: str(data.importBatchId) || undefined,
+    transactionCandidateId: str(data.transactionCandidateId) || undefined,
     transactionFingerprint: str(data.transactionFingerprint) || undefined,
     parserMode: parserMode(data.parserMode),
     parserConfidence:
@@ -424,5 +536,92 @@ export function toNotificationPreference(d: AnySnap): NotificationPreference {
     eventChannels: channelMap(data.eventChannels),
     largeExpenseThresholds: splitMap(data.largeExpenseThresholds),
     updatedAt: num(data.updatedAt),
+  };
+}
+
+export function toTransactionCandidate(d: AnySnap): TransactionCandidate {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    userId: str(data.userId),
+    source: "gmail",
+    sourceMessageId: str(data.sourceMessageId),
+    sourceThreadId: str(data.sourceThreadId),
+    sourceSender: str(data.sourceSender),
+    sourceSubjectHash: str(data.sourceSubjectHash),
+    rawSnippetRedacted: str(data.rawSnippetRedacted),
+    merchant: str(data.merchant),
+    normalizedMerchant: str(data.normalizedMerchant),
+    amount: num(data.amount),
+    currency: str(data.currency, "USD"),
+    transactionAt: num(data.transactionAt),
+    detectedAt: num(data.detectedAt),
+    paymentInstrumentHint: str(data.paymentInstrumentHint) || undefined,
+    category: category(data.category),
+    candidateType: candidateType(data.candidateType),
+    status: candidateStatus(data.status),
+    confidence: num(data.confidence),
+    parseConfidence: num(data.parseConfidence),
+    contextConfidence: num(data.contextConfidence),
+    duplicateConfidence: num(data.duplicateConfidence),
+    suggestedTarget: suggestedTarget(data.suggestedTarget),
+    suggestedSplit: suggestedSplit(data.suggestedSplit),
+    duplicateExpensePath: str(data.duplicateExpensePath) || undefined,
+    fingerprint: str(data.fingerprint),
+    sourceRetentionExpiresAt: num(data.sourceRetentionExpiresAt),
+    createdExpensePath: str(data.createdExpensePath) || undefined,
+    updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : undefined,
+  };
+}
+
+export function toTransactionRule(d: AnySnap): TransactionRule {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    userId: str(data.userId),
+    status: ruleStatus(data.status),
+    merchantPattern: str(data.merchantPattern),
+    senderPattern: str(data.senderPattern),
+    category: category(data.category),
+    amountMin: typeof data.amountMin === "number" ? data.amountMin : undefined,
+    amountMax: typeof data.amountMax === "number" ? data.amountMax : undefined,
+    currency: str(data.currency) || undefined,
+    targetKind: ruleTargetKind(data.targetKind),
+    targetId: str(data.targetId) || undefined,
+    splitPreset: splitPreset(data.splitPreset),
+    activeFrom: typeof data.activeFrom === "number" ? data.activeFrom : undefined,
+    activeUntil: typeof data.activeUntil === "number" ? data.activeUntil : undefined,
+    createdFromCandidateId: str(data.createdFromCandidateId) || undefined,
+    lastTriggeredAt:
+      typeof data.lastTriggeredAt === "number" ? data.lastTriggeredAt : undefined,
+    triggerCount: num(data.triggerCount),
+    createdAt: num(data.createdAt),
+    updatedAt: num(data.updatedAt),
+  };
+}
+
+export function toTransactionRadarSettings(
+  d: AnySnap
+): TransactionRadarSettings {
+  const data = d.data() ?? {};
+  return {
+    gmailConnected: data.gmailConnected === true,
+    gmailEmail: str(data.gmailEmail),
+    scanStatus: scanStatus(data.scanStatus),
+    retentionDays:
+      typeof data.retentionDays === "number" ? data.retentionDays : 30,
+    rawEmailRetention: rawRetention(data.rawEmailRetention),
+    ignoredMerchants: stringArray(data.ignoredMerchants),
+    activeFilters: stringArray(data.activeFilters),
+    updatedAt: num(data.updatedAt),
+    connectedAt:
+      typeof data.connectedAt === "number" ? data.connectedAt : undefined,
+    lastSyncedAt:
+      typeof data.lastSyncedAt === "number" ? data.lastSyncedAt : undefined,
+    lastSyncError: str(data.lastSyncError) || undefined,
+    gmailWatchExpiresAt:
+      typeof data.gmailWatchExpiresAt === "number"
+        ? data.gmailWatchExpiresAt
+        : undefined,
   };
 }

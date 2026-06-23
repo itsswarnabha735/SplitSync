@@ -1148,6 +1148,8 @@ export function GroupManageDialog({
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
   const [settlementCurrency, setSettlementCurrency] = useState("USD");
   const [travelMode, setTravelMode] = useState(false);
+  const [tripStart, setTripStart] = useState("");
+  const [tripEnd, setTripEnd] = useState("");
   const [paymentMemberId, setPaymentMemberId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
   const [paymentHandle, setPaymentHandle] = useState("");
@@ -1171,6 +1173,8 @@ export function GroupManageDialog({
     setDefaultCurrency(group.defaultCurrency ?? "USD");
     setSettlementCurrency(group.settlementCurrency ?? group.defaultCurrency ?? "USD");
     setTravelMode(group.travelMode === true);
+    setTripStart(group.tripStartAt ? toDateInputValue(new Date(group.tripStartAt)) : "");
+    setTripEnd(group.tripEndAt ? toDateInputValue(new Date(group.tripEndAt)) : "");
     setError(null);
   }, [group]);
 
@@ -1203,6 +1207,14 @@ export function GroupManageDialog({
             defaultCurrency,
             settlementCurrency,
             travelMode,
+            tripStartAt:
+              travelMode && tripStart
+                ? dateInputToLocalTimestamp(tripStart) ?? undefined
+                : undefined,
+            tripEndAt:
+              travelMode && tripEnd
+                ? dateInputToLocalTimestamp(tripEnd) ?? undefined
+                : undefined,
           }),
         {
           loading: "Updating group...",
@@ -1322,10 +1334,32 @@ export function GroupManageDialog({
                 <span>
                   <span className="block text-sm font-bold">Travel mode</span>
                   <span className="block text-xs text-muted-foreground">
-                    Add original currency and FX notes to expenses.
+                    Add FX notes and enable Trip Capture Mode for Transaction Radar.
                   </span>
                 </span>
               </label>
+              {travelMode && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="manage-trip-start">Trip starts</Label>
+                    <Input
+                      id="manage-trip-start"
+                      type="date"
+                      value={tripStart}
+                      onChange={(event) => setTripStart(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="manage-trip-end">Trip ends</Label>
+                    <Input
+                      id="manage-trip-end"
+                      type="date"
+                      value={tripEnd}
+                      onChange={(event) => setTripEnd(event.target.value)}
+                    />
+                  </div>
+                </>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="manage-group-default-currency">
                   Default currency

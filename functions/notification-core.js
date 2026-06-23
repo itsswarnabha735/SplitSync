@@ -13,6 +13,7 @@ const EVENT_TYPES = [
   "adhoc_expense_deleted",
   "adhoc_settlement_created",
   "adhoc_settlement_deleted",
+  "transaction_candidate_detected",
 ];
 
 function notificationDocId(eventId, uid) {

@@ -82,7 +82,8 @@ service cloud.firestore {
 
     function isExpenseSourceType(value) {
       return value in [
-        "statement-import", "ai-text", "pasted-message", "receipt-image", "manual"
+        "statement-import", "ai-text", "pasted-message", "receipt-image",
+        "gmail", "manual"
       ];
     }
 
@@ -98,6 +99,10 @@ service cloud.firestore {
         && (
           !("importBatchId" in request.resource.data)
           || isNonEmptyString(request.resource.data.importBatchId, 80)
+        )
+        && (
+          !("transactionCandidateId" in request.resource.data)
+          || isNonEmptyString(request.resource.data.transactionCandidateId, 160)
         )
         && (
           !("transactionFingerprint" in request.resource.data)
@@ -270,7 +275,8 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           "id", "name", "description", "createdAt", "createdBy", "memberUids",
           "status", "archivedAt", "archivedByUid", "template",
-          "defaultCurrency", "settlementCurrency", "travelMode"
+          "defaultCurrency", "settlementCurrency", "travelMode",
+          "tripStartAt", "tripEndAt"
         ])
         && request.resource.data.keys().hasAll([
           "id", "name", "description", "createdAt", "createdBy", "memberUids"
@@ -310,6 +316,14 @@ service cloud.firestore {
         && (
           !("travelMode" in request.resource.data)
           || request.resource.data.travelMode is bool
+        )
+        && (
+          !("tripStartAt" in request.resource.data)
+          || isMillis(request.resource.data.tripStartAt)
+        )
+        && (
+          !("tripEndAt" in request.resource.data)
+          || isMillis(request.resource.data.tripEndAt)
         );
     }
 
@@ -326,7 +340,8 @@ service cloud.firestore {
         && request.resource.data.memberUids == resource.data.memberUids
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "name", "description", "status", "archivedAt", "archivedByUid",
-          "template", "defaultCurrency", "settlementCurrency", "travelMode"
+          "template", "defaultCurrency", "settlementCurrency", "travelMode",
+          "tripStartAt", "tripEndAt"
         ]);
     }
 
@@ -436,7 +451,7 @@ service cloud.firestore {
           "id", "groupId", "description", "amount", "paidById", "splitType",
           "timestamp", "currency", "splits", "createdByUid", "category",
           "sourceType", "importBatchId", "transactionFingerprint",
-          "parserMode", "parserConfidence", "notes", "sourceConfidence",
+          "transactionCandidateId", "parserMode", "parserConfidence", "notes", "sourceConfidence",
           "sourceWarnings", "createdAt", "updatedAt", "lastEditedByUid",
           "editCount", "originalAmount", "originalCurrency", "exchangeRate",
           "fxNote", "disputeStatus", "disputedByUid", "disputedAt",
@@ -645,7 +660,7 @@ service cloud.firestore {
           "id", "description", "amount", "paidByFriendId", "splitType",
           "timestamp", "currency", "splits", "createdByUid", "category",
           "sourceType", "importBatchId", "transactionFingerprint",
-          "parserMode", "parserConfidence", "mirroredFromPath",
+          "transactionCandidateId", "parserMode", "parserConfidence", "mirroredFromPath",
           "mirroredFromUid", "originalId", "notes", "sourceConfidence",
           "sourceWarnings", "createdAt", "updatedAt", "lastEditedByUid",
           "editCount"
@@ -760,8 +775,258 @@ service cloud.firestore {
         "group_settlement_created", "group_settlement_deleted",
         "group_fully_settled", "friend_added",
         "adhoc_expense_created", "adhoc_expense_deleted",
-        "adhoc_settlement_created", "adhoc_settlement_deleted"
+        "adhoc_settlement_created", "adhoc_settlement_deleted",
+        "transaction_candidate_detected"
       ];
+    }
+
+    function isTransactionCandidateType(value) {
+      return value in ["spend", "refund", "transfer", "cash-withdrawal", "unknown"];
+    }
+
+    function isTransactionCandidateStatus(value) {
+      return value in [
+        "new", "suggested", "added", "personal", "ignored", "duplicate", "expired"
+      ];
+    }
+
+    function isTransactionTargetKind(value) {
+      return value in ["group", "friend"];
+    }
+
+    function isTransactionReasonCode(value) {
+      return value in [
+        "active_trip_dates", "merchant_seen_in_group", "same_currency_as_group",
+        "recent_group_activity", "user_rule_match", "friend_recently_split",
+        "category_common_for_group"
+      ];
+    }
+
+    function isTransactionRuleStatus(value) {
+      return value in ["suggest_only", "auto_prepare", "auto_add_with_undo", "paused"];
+    }
+
+    function isTransactionRuleSplitPreset(value) {
+      return value in ["equal", "payer-only", "last-used"];
+    }
+
+    function isTransactionRadarScanStatus(value) {
+      return value in ["active", "paused", "disconnected"];
+    }
+
+    function isTransactionRadarRawRetention(value) {
+      return value in ["none", "24h", "until-reviewed"];
+    }
+
+    function isReasonCodeList(value) {
+      return value is list
+        && value.size() <= 10
+        && (value.size() == 0 || isTransactionReasonCode(value[0]))
+        && (value.size() <= 1 || isTransactionReasonCode(value[1]))
+        && (value.size() <= 2 || isTransactionReasonCode(value[2]))
+        && (value.size() <= 3 || isTransactionReasonCode(value[3]))
+        && (value.size() <= 4 || isTransactionReasonCode(value[4]))
+        && (value.size() <= 5 || isTransactionReasonCode(value[5]))
+        && (value.size() <= 6 || isTransactionReasonCode(value[6]))
+        && (value.size() <= 7 || isTransactionReasonCode(value[7]))
+        && (value.size() <= 8 || isTransactionReasonCode(value[8]))
+        && (value.size() <= 9 || isTransactionReasonCode(value[9]));
+    }
+
+    function isSuggestedTarget(value) {
+      return value is map
+        && value.keys().hasOnly(["kind", "targetId", "targetName", "reasonCodes", "confidence"])
+        && value.keys().hasAll(["kind", "targetId", "targetName", "reasonCodes", "confidence"])
+        && isTransactionTargetKind(value.kind)
+        && isNonEmptyString(value.targetId, 160)
+        && isNonEmptyString(value.targetName, 120)
+        && isReasonCodeList(value.reasonCodes)
+        && isOptionalRatio(value.confidence);
+    }
+
+    function isSuggestedSplit(value) {
+      return value is map
+        && value.keys().hasOnly(["splitType", "participantIds"])
+        && value.keys().hasAll(["splitType", "participantIds"])
+        && isSplitType(value.splitType)
+        && value.participantIds is list
+        && value.participantIds.size() > 0
+        && value.participantIds.size() <= 100;
+    }
+
+    function isTransactionCandidateDoc(uid, candidateId) {
+      return request.resource.data.keys().hasOnly([
+          "id", "userId", "source", "sourceMessageId", "sourceThreadId",
+          "sourceSender", "sourceSubjectHash", "rawSnippetRedacted",
+          "merchant", "normalizedMerchant", "amount", "currency",
+          "transactionAt", "detectedAt", "paymentInstrumentHint", "category",
+          "candidateType", "status", "confidence", "parseConfidence",
+          "contextConfidence", "duplicateConfidence", "suggestedTarget",
+          "suggestedSplit", "duplicateExpensePath", "fingerprint",
+          "sourceRetentionExpiresAt", "createdExpensePath", "updatedAt"
+        ])
+        && request.resource.data.keys().hasAll([
+          "id", "userId", "source", "sourceMessageId", "sourceThreadId",
+          "sourceSender", "sourceSubjectHash", "rawSnippetRedacted",
+          "merchant", "normalizedMerchant", "amount", "currency",
+          "transactionAt", "detectedAt", "candidateType", "status",
+          "confidence", "parseConfidence", "contextConfidence",
+          "duplicateConfidence", "fingerprint", "sourceRetentionExpiresAt"
+        ])
+        && request.resource.data.id == candidateId
+        && request.resource.data.userId == uid
+        && request.resource.data.source == "gmail"
+        && isNonEmptyString(request.resource.data.sourceMessageId, 180)
+        && isNonEmptyString(request.resource.data.sourceThreadId, 180)
+        && isString(request.resource.data.sourceSender, 180)
+        && isString(request.resource.data.sourceSubjectHash, 120)
+        && isString(request.resource.data.rawSnippetRedacted, 300)
+        && isNonEmptyString(request.resource.data.merchant, 120)
+        && isNonEmptyString(request.resource.data.normalizedMerchant, 120)
+        && isMoney(request.resource.data.amount)
+        && isCurrency(request.resource.data.currency)
+        && isMillis(request.resource.data.transactionAt)
+        && isMillis(request.resource.data.detectedAt)
+        && (
+          !("paymentInstrumentHint" in request.resource.data)
+          || isString(request.resource.data.paymentInstrumentHint, 80)
+        )
+        && (
+          !("category" in request.resource.data)
+          || isExpenseCategory(request.resource.data.category)
+        )
+        && isTransactionCandidateType(request.resource.data.candidateType)
+        && isTransactionCandidateStatus(request.resource.data.status)
+        && isOptionalRatio(request.resource.data.confidence)
+        && isOptionalRatio(request.resource.data.parseConfidence)
+        && isOptionalRatio(request.resource.data.contextConfidence)
+        && isOptionalRatio(request.resource.data.duplicateConfidence)
+        && (
+          !("suggestedTarget" in request.resource.data)
+          || isSuggestedTarget(request.resource.data.suggestedTarget)
+        )
+        && (
+          !("suggestedSplit" in request.resource.data)
+          || isSuggestedSplit(request.resource.data.suggestedSplit)
+        )
+        && (
+          !("duplicateExpensePath" in request.resource.data)
+          || isString(request.resource.data.duplicateExpensePath, 500)
+        )
+        && isNonEmptyString(request.resource.data.fingerprint, 220)
+        && isMillis(request.resource.data.sourceRetentionExpiresAt)
+        && (
+          !("createdExpensePath" in request.resource.data)
+          || isString(request.resource.data.createdExpensePath, 500)
+        )
+        && (
+          !("updatedAt" in request.resource.data)
+          || isMillis(request.resource.data.updatedAt)
+        );
+    }
+
+    function isTransactionRuleDoc(uid, ruleId) {
+      return request.resource.data.keys().hasOnly([
+          "id", "userId", "status", "merchantPattern", "senderPattern",
+          "category", "amountMin", "amountMax", "currency", "targetKind",
+          "targetId", "splitPreset", "activeFrom", "activeUntil",
+          "createdFromCandidateId", "lastTriggeredAt", "triggerCount",
+          "createdAt", "updatedAt"
+        ])
+        && request.resource.data.keys().hasAll([
+          "id", "userId", "status", "merchantPattern", "senderPattern",
+          "splitPreset", "triggerCount", "createdAt", "updatedAt"
+        ])
+        && request.resource.data.id == ruleId
+        && request.resource.data.userId == uid
+        && isTransactionRuleStatus(request.resource.data.status)
+        && isString(request.resource.data.merchantPattern, 120)
+        && isString(request.resource.data.senderPattern, 180)
+        && (
+          !("category" in request.resource.data)
+          || isExpenseCategory(request.resource.data.category)
+        )
+        && (
+          !("amountMin" in request.resource.data)
+          || isMoney(request.resource.data.amountMin)
+        )
+        && (
+          !("amountMax" in request.resource.data)
+          || isMoney(request.resource.data.amountMax)
+        )
+        && (
+          !("currency" in request.resource.data)
+          || isCurrency(request.resource.data.currency)
+        )
+        && (
+          !("targetKind" in request.resource.data)
+          || isTransactionTargetKind(request.resource.data.targetKind)
+        )
+        && (
+          !("targetId" in request.resource.data)
+          || isString(request.resource.data.targetId, 160)
+        )
+        && isTransactionRuleSplitPreset(request.resource.data.splitPreset)
+        && (
+          !("activeFrom" in request.resource.data)
+          || isMillis(request.resource.data.activeFrom)
+        )
+        && (
+          !("activeUntil" in request.resource.data)
+          || isMillis(request.resource.data.activeUntil)
+        )
+        && (
+          !("createdFromCandidateId" in request.resource.data)
+          || isString(request.resource.data.createdFromCandidateId, 160)
+        )
+        && (
+          !("lastTriggeredAt" in request.resource.data)
+          || isMillis(request.resource.data.lastTriggeredAt)
+        )
+        && request.resource.data.triggerCount is number
+        && request.resource.data.triggerCount >= 0
+        && request.resource.data.triggerCount <= 100000
+        && isMillis(request.resource.data.createdAt)
+        && isMillis(request.resource.data.updatedAt);
+    }
+
+    function isTransactionRadarSettingsDoc(uid) {
+      return request.resource.data.keys().hasOnly([
+          "gmailConnected", "gmailEmail", "scanStatus", "retentionDays",
+          "rawEmailRetention", "ignoredMerchants", "activeFilters",
+          "updatedAt", "connectedAt", "lastSyncedAt", "lastSyncError",
+          "gmailWatchExpiresAt"
+        ])
+        && request.resource.data.keys().hasAll([
+          "gmailConnected", "gmailEmail", "scanStatus", "retentionDays",
+          "rawEmailRetention", "ignoredMerchants", "activeFilters", "updatedAt"
+        ])
+        && request.resource.data.gmailConnected is bool
+        && isOptionalEmail(request.resource.data.gmailEmail)
+        && isTransactionRadarScanStatus(request.resource.data.scanStatus)
+        && request.resource.data.retentionDays is number
+        && request.resource.data.retentionDays >= 1
+        && request.resource.data.retentionDays <= 365
+        && isTransactionRadarRawRetention(request.resource.data.rawEmailRetention)
+        && isOptionalStringList(request.resource.data.ignoredMerchants, 100)
+        && isOptionalStringList(request.resource.data.activeFilters, 50)
+        && isMillis(request.resource.data.updatedAt)
+        && (
+          !("connectedAt" in request.resource.data)
+          || isMillis(request.resource.data.connectedAt)
+        )
+        && (
+          !("lastSyncedAt" in request.resource.data)
+          || isMillis(request.resource.data.lastSyncedAt)
+        )
+        && (
+          !("lastSyncError" in request.resource.data)
+          || isString(request.resource.data.lastSyncError, 500)
+        )
+        && (
+          !("gmailWatchExpiresAt" in request.resource.data)
+          || isMillis(request.resource.data.gmailWatchExpiresAt)
+        );
     }
 
     function isNotificationDoc() {
@@ -885,6 +1150,32 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) && isFcmTokenDoc();
         allow delete: if isOwner(uid);
+      }
+
+      match /transactionCandidates/{candidateId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && isTransactionCandidateDoc(uid, candidateId);
+        allow delete: if isOwner(uid);
+      }
+
+      match /transactionRules/{ruleId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && isTransactionRuleDoc(uid, ruleId);
+        allow delete: if isOwner(uid);
+      }
+
+      match /transactionRadarSettings/{settingsId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && settingsId == "default"
+          && isTransactionRadarSettingsDoc(uid);
+        allow delete: if isOwner(uid) && settingsId == "default";
+      }
+
+      match /privateIntegrations/{integrationId} {
+        allow read, write: if false;
       }
     }
 

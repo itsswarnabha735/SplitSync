@@ -47,6 +47,12 @@ import {
   SettlementRequest,
   SettlementRequestStatus,
   SplitType,
+  TransactionCandidate,
+  TransactionCandidateStatus,
+  TransactionRadarSettings,
+  TransactionRule,
+  TransactionRuleStatus,
+  TransactionRuleTargetKind,
 } from "@/lib/models";
 import type { SplitPair } from "@/lib/splits";
 import { splitsToMap } from "@/lib/splits";
@@ -64,6 +70,9 @@ import {
   toPayment,
   toRecurringExpense,
   toSettlementRequest,
+  toTransactionCandidate,
+  toTransactionRadarSettings,
+  toTransactionRule,
 } from "./converters";
 
 type Cb<T> = (items: T) => void;
@@ -85,6 +94,27 @@ export interface ExpenseWriteMetadata extends ExpenseImportProvenance {
   originalCurrency?: string;
   exchangeRate?: number;
   fxNote?: string;
+}
+
+export interface TransactionCandidateWrite
+  extends Omit<TransactionCandidate, "id" | "userId"> {
+  id?: string;
+}
+
+export interface TransactionRuleWrite {
+  status?: TransactionRuleStatus;
+  merchantPattern: string;
+  senderPattern?: string;
+  category?: ExpenseCategorySlug;
+  amountMin?: number;
+  amountMax?: number;
+  currency?: string;
+  targetKind?: TransactionRuleTargetKind;
+  targetId?: string;
+  splitPreset?: TransactionRule["splitPreset"];
+  activeFrom?: number;
+  activeUntil?: number;
+  createdFromCandidateId?: string;
 }
 
 export interface ExpenseUpdatePatch extends ExpenseWriteMetadata {
@@ -147,6 +177,8 @@ export interface GroupProfilePatch {
   defaultCurrency?: string;
   settlementCurrency?: string;
   travelMode?: boolean;
+  tripStartAt?: number;
+  tripEndAt?: number;
 }
 
 export interface MemberPaymentPatch {
@@ -249,6 +281,16 @@ export function makeRepository(uid: string) {
   const fcmTokensRef = () => collection(db, "users", uid, "fcmTokens");
   const fcmTokenDoc = (tokenHash: string) =>
     doc(db, "users", uid, "fcmTokens", tokenHash);
+  const transactionCandidatesRef = () =>
+    collection(db, "users", uid, "transactionCandidates");
+  const transactionCandidateDoc = (candidateId: string) =>
+    doc(db, "users", uid, "transactionCandidates", candidateId);
+  const transactionRulesRef = () =>
+    collection(db, "users", uid, "transactionRules");
+  const transactionRuleDoc = (ruleId: string) =>
+    doc(db, "users", uid, "transactionRules", ruleId);
+  const transactionRadarSettingsDoc = () =>
+    doc(db, "users", uid, "transactionRadarSettings", "default");
 
   async function commitBatched(
     actions: ((batch: ReturnType<typeof writeBatch>) => void)[]
@@ -388,6 +430,8 @@ export function makeRepository(uid: string) {
       defaultCurrency?: string;
       settlementCurrency?: string;
       travelMode?: boolean;
+      tripStartAt?: number;
+      tripEndAt?: number;
     } = {}
   ): Promise<string> {
     const groupRef = doc(groupsRef());
@@ -433,6 +477,8 @@ export function makeRepository(uid: string) {
       settlementCurrency:
         options.settlementCurrency ?? options.defaultCurrency ?? "USD",
       travelMode: options.travelMode === true,
+      tripStartAt: options.tripStartAt,
+      tripEndAt: options.tripEndAt,
     };
     batch.set(groupRef, group);
 
@@ -476,6 +522,8 @@ export function makeRepository(uid: string) {
         defaultCurrency: patch.defaultCurrency,
         settlementCurrency: patch.settlementCurrency,
         travelMode: patch.travelMode,
+        tripStartAt: patch.tripStartAt,
+        tripEndAt: patch.tripEndAt,
       })
     );
   }
@@ -542,6 +590,7 @@ export function makeRepository(uid: string) {
       notes: params.notes?.trim(),
       sourceType: params.sourceType,
       importBatchId: params.importBatchId,
+      transactionCandidateId: params.transactionCandidateId,
       transactionFingerprint: params.transactionFingerprint,
       parserMode: params.parserMode,
       parserConfidence: params.parserConfidence,
@@ -591,6 +640,7 @@ export function makeRepository(uid: string) {
         category: params.category,
         sourceType: params.sourceType,
         importBatchId: params.importBatchId,
+        transactionCandidateId: params.transactionCandidateId,
         transactionFingerprint: params.transactionFingerprint,
         parserMode: params.parserMode,
         parserConfidence: params.parserConfidence,
@@ -1105,6 +1155,7 @@ export function makeRepository(uid: string) {
       category: params.category,
       sourceType: params.sourceType,
       importBatchId: params.importBatchId,
+      transactionCandidateId: params.transactionCandidateId,
       transactionFingerprint: params.transactionFingerprint,
       parserMode: params.parserMode,
       parserConfidence: params.parserConfidence,
@@ -1149,6 +1200,7 @@ export function makeRepository(uid: string) {
         category: params.category,
         sourceType: params.sourceType,
         importBatchId: params.importBatchId,
+        transactionCandidateId: params.transactionCandidateId,
         transactionFingerprint: params.transactionFingerprint,
         parserMode: params.parserMode,
         parserConfidence: params.parserConfidence,
@@ -1381,6 +1433,325 @@ export function makeRepository(uid: string) {
     await deleteDoc(fcmTokenDoc(tokenHash));
   }
 
+  // ----------------------------------------------------------------------
+  // Transaction Radar (private user-owned Gmail candidate queue)
+  // ----------------------------------------------------------------------
+  function subscribeTransactionCandidates(
+    cb: Cb<TransactionCandidate[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(
+      transactionCandidatesRef(),
+      orderBy("detectedAt", "desc"),
+      limit(100)
+    );
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toTransactionCandidate)),
+      snapshotError("transactionCandidates", onError)
+    );
+  }
+
+  function subscribeTransactionRules(
+    cb: Cb<TransactionRule[]>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    const q = query(transactionRulesRef(), orderBy("updatedAt", "desc"));
+    return onSnapshot(
+      q,
+      (snap) => cb(snap.docs.map(toTransactionRule)),
+      snapshotError("transactionRules", onError)
+    );
+  }
+
+  function subscribeTransactionRadarSettings(
+    cb: Cb<TransactionRadarSettings | null>,
+    onError?: ErrorCb
+  ): Unsubscribe {
+    return onSnapshot(
+      transactionRadarSettingsDoc(),
+      (snap) => cb(snap.exists() ? toTransactionRadarSettings(snap) : null),
+      snapshotError("transactionRadarSettings", onError)
+    );
+  }
+
+  async function upsertTransactionRadarSettings(
+    patch: Partial<TransactionRadarSettings>
+  ): Promise<void> {
+    const existing = await getDoc(transactionRadarSettingsDoc());
+    const current: TransactionRadarSettings = existing.exists()
+      ? toTransactionRadarSettings(existing)
+      : {
+          gmailConnected: false,
+          gmailEmail: "",
+          scanStatus: "disconnected",
+          retentionDays: 30,
+          rawEmailRetention: "24h",
+          ignoredMerchants: [],
+          activeFilters: [
+            "bank-alerts",
+            "card-receipts",
+            "upi-confirmations",
+            "merchant-receipts",
+          ],
+          updatedAt: 0,
+        };
+    await setDoc(
+      transactionRadarSettingsDoc(),
+      {
+        ...current,
+        ...patch,
+        updatedAt: Date.now(),
+      },
+      { merge: false }
+    );
+  }
+
+  async function upsertTransactionCandidate(
+    candidate: TransactionCandidateWrite
+  ): Promise<string> {
+    const ref = candidate.id
+      ? transactionCandidateDoc(candidate.id)
+      : doc(transactionCandidatesRef());
+    const now = Date.now();
+    const payload: TransactionCandidate = {
+      ...candidate,
+      id: ref.id,
+      userId: uid,
+      updatedAt: now,
+    };
+    await setDoc(ref, withoutUndefined(payload), { merge: true });
+    return ref.id;
+  }
+
+  async function updateTransactionCandidateStatus(
+    candidateId: string,
+    status: TransactionCandidateStatus
+  ): Promise<void> {
+    if (!candidateId) return;
+    await updateDoc(transactionCandidateDoc(candidateId), {
+      status,
+      updatedAt: Date.now(),
+    });
+  }
+
+  async function confirmTransactionCandidateAsGroupExpense(params: {
+    candidate: TransactionCandidate;
+    groupId: string;
+    description: string;
+    amount: number;
+    paidById: string;
+    splitType: SplitType;
+    splits: SplitPair[];
+    timestamp: number;
+    currency: string;
+    category?: ExpenseCategorySlug;
+  }): Promise<string> {
+    const expenseRef = doc(expensesRef(params.groupId));
+    const now = Date.now();
+    const expense: Expense = {
+      id: expenseRef.id,
+      groupId: params.groupId,
+      description: params.description.trim(),
+      amount: params.amount,
+      paidById: params.paidById,
+      splitType: params.splitType,
+      timestamp: params.timestamp,
+      currency: params.currency,
+      splits: splitsToMap(params.splits),
+      createdByUid: uid,
+      category: params.category,
+      sourceType: "gmail",
+      transactionCandidateId: params.candidate.id,
+      transactionFingerprint: params.candidate.fingerprint,
+      sourceConfidence: params.candidate.confidence,
+      sourceWarnings:
+        params.candidate.status === "duplicate"
+          ? ["Possible duplicate detected before confirmation."]
+          : [],
+      createdAt: now,
+      updatedAt: now,
+      editCount: 0,
+    };
+    const batch = writeBatch(db);
+    batch.set(expenseRef, withoutUndefined(expense));
+    batch.update(transactionCandidateDoc(params.candidate.id), {
+      status: "added",
+      createdExpensePath: `groups/${params.groupId}/expenses/${expenseRef.id}`,
+      updatedAt: now,
+    });
+    await batch.commit();
+    return expenseRef.id;
+  }
+
+  async function confirmTransactionCandidateAsAdHocExpense(params: {
+    candidate: TransactionCandidate;
+    description: string;
+    amount: number;
+    paidByFriendId: string;
+    splitType: SplitType;
+    splits: SplitPair[];
+    timestamp: number;
+    currency: string;
+    category?: ExpenseCategorySlug;
+  }): Promise<string> {
+    const expenseRef = doc(adhocExpensesRef());
+    const now = Date.now();
+    const expense: AdHocExpense = {
+      id: expenseRef.id,
+      description: params.description.trim(),
+      amount: params.amount,
+      paidByFriendId: params.paidByFriendId,
+      splitType: params.splitType,
+      timestamp: params.timestamp,
+      currency: params.currency,
+      splits: splitsToMap(params.splits),
+      createdByUid: uid,
+      category: params.category,
+      sourceType: "gmail",
+      transactionCandidateId: params.candidate.id,
+      transactionFingerprint: params.candidate.fingerprint,
+      sourceConfidence: params.candidate.confidence,
+      sourceWarnings:
+        params.candidate.status === "duplicate"
+          ? ["Possible duplicate detected before confirmation."]
+          : [],
+      createdAt: now,
+      updatedAt: now,
+      editCount: 0,
+    };
+    const batch = writeBatch(db);
+    batch.set(expenseRef, withoutUndefined(expense));
+    batch.update(transactionCandidateDoc(params.candidate.id), {
+      status: "added",
+      createdExpensePath: `users/${uid}/adhocExpenses/${expenseRef.id}`,
+      updatedAt: now,
+    });
+    await batch.commit();
+    return expenseRef.id;
+  }
+
+  async function attachTransactionCandidateEvidence(
+    candidate: TransactionCandidate
+  ): Promise<void> {
+    const path = candidate.duplicateExpensePath;
+    if (!path) throw new Error("No matching expense was found for this candidate.");
+    const now = Date.now();
+    const evidence = withoutUndefined({
+      sourceType: "gmail" as const,
+      transactionCandidateId: candidate.id,
+      transactionFingerprint: candidate.fingerprint,
+      sourceConfidence: candidate.confidence,
+      sourceWarnings: arrayUnion("Gmail evidence attached after duplicate review."),
+      updatedAt: now,
+      lastEditedByUid: uid,
+      editCount: increment(1),
+    });
+    const batch = writeBatch(db);
+    const groupMatch = path.match(/^groups\/([^/]+)\/expenses\/([^/]+)$/);
+    const adhocMatch = path.match(/^users\/([^/]+)\/adhocExpenses\/([^/]+)$/);
+    if (groupMatch) {
+      batch.update(doc(expensesRef(groupMatch[1]), groupMatch[2]), evidence);
+    } else if (adhocMatch && adhocMatch[1] === uid) {
+      batch.update(doc(adhocExpensesRef(), adhocMatch[2]), evidence);
+    } else {
+      throw new Error("This duplicate match cannot be attached from your account.");
+    }
+    batch.update(transactionCandidateDoc(candidate.id), {
+      status: "duplicate",
+      createdExpensePath: path,
+      updatedAt: now,
+    });
+    await batch.commit();
+  }
+
+  async function createTransactionRule(
+    params: TransactionRuleWrite
+  ): Promise<string> {
+    const ref = doc(transactionRulesRef());
+    const now = Date.now();
+    const rule: TransactionRule = {
+      id: ref.id,
+      userId: uid,
+      status: params.status ?? "suggest_only",
+      merchantPattern: params.merchantPattern.trim(),
+      senderPattern: params.senderPattern?.trim() ?? "",
+      category: params.category,
+      amountMin: params.amountMin,
+      amountMax: params.amountMax,
+      currency: params.currency,
+      targetKind: params.targetKind,
+      targetId: params.targetId,
+      splitPreset: params.splitPreset ?? "equal",
+      activeFrom: params.activeFrom,
+      activeUntil: params.activeUntil,
+      createdFromCandidateId: params.createdFromCandidateId,
+      triggerCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await setDoc(ref, withoutUndefined(rule));
+    return ref.id;
+  }
+
+  async function updateTransactionRule(
+    ruleId: string,
+    patch: Partial<TransactionRuleWrite> & {
+      status?: TransactionRuleStatus;
+      trigger?: boolean;
+    }
+  ): Promise<void> {
+    if (!ruleId) return;
+    const { trigger, ...fields } = patch;
+    await updateDoc(
+      transactionRuleDoc(ruleId),
+      withoutUndefined({
+        ...fields,
+        merchantPattern: fields.merchantPattern?.trim(),
+        senderPattern: fields.senderPattern?.trim(),
+        lastTriggeredAt: trigger ? Date.now() : undefined,
+        triggerCount: trigger ? increment(1) : undefined,
+        updatedAt: Date.now(),
+      })
+    );
+  }
+
+  async function deleteTransactionRule(ruleId: string): Promise<void> {
+    if (!ruleId) return;
+    await deleteDoc(transactionRuleDoc(ruleId));
+  }
+
+  async function deleteAllTransactionCandidates(): Promise<void> {
+    const snap = await getDocs(transactionCandidatesRef());
+    await commitBatched(
+      snap.docs.map((candidateDoc) => (batch) => batch.delete(candidateDoc.ref))
+    );
+  }
+
+  async function expireStaleTransactionCandidates(): Promise<number> {
+    const snap = await getDocs(transactionCandidatesRef());
+    const now = Date.now();
+    const stale = snap.docs.filter((candidateDoc) => {
+      const data = candidateDoc.data();
+      return (
+        typeof data.sourceRetentionExpiresAt === "number" &&
+        data.sourceRetentionExpiresAt <= now &&
+        data.status !== "added" &&
+        data.status !== "expired"
+      );
+    });
+    await commitBatched(
+      stale.map((candidateDoc) => (batch) =>
+        batch.update(candidateDoc.ref, {
+          status: "expired",
+          rawSnippetRedacted: "[expired]",
+          updatedAt: now,
+        })
+      )
+    );
+    return stale.length;
+  }
+
   return {
     uid,
     subscribeGroups,
@@ -1437,6 +1808,20 @@ export function makeRepository(uid: string) {
     updateNotificationPreferences,
     saveFcmToken,
     deleteFcmToken,
+    subscribeTransactionCandidates,
+    subscribeTransactionRules,
+    subscribeTransactionRadarSettings,
+    upsertTransactionRadarSettings,
+    upsertTransactionCandidate,
+    updateTransactionCandidateStatus,
+    confirmTransactionCandidateAsGroupExpense,
+    confirmTransactionCandidateAsAdHocExpense,
+    attachTransactionCandidateEvidence,
+    createTransactionRule,
+    updateTransactionRule,
+    deleteTransactionRule,
+    deleteAllTransactionCandidates,
+    expireStaleTransactionCandidates,
   };
 }
 

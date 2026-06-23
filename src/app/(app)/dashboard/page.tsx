@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Inbox, LogOut, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useGroups } from "@/hooks/use-groups";
@@ -10,6 +10,7 @@ import { useFriends } from "@/hooks/use-friends";
 import { useInvites } from "@/hooks/use-invites";
 import { useDashboardBalances } from "@/hooks/use-dashboard-balances";
 import { useRepository } from "@/hooks/use-repository";
+import { useTransactionRadar } from "@/hooks/use-transaction-radar";
 import { useUiStore } from "@/stores/ui-store";
 import { signOut } from "@/services/auth";
 import type { AdHocExpense } from "@/lib/models";
@@ -54,6 +55,10 @@ export default function DashboardPage() {
   const { friends, friendsWithBalances, adHocExpenses, adHocPayments, groupSlices } =
     useFriends(groupIds);
   const invites = useInvites();
+  const { candidates } = useTransactionRadar();
+  const reviewCandidateCount = candidates.filter((candidate) =>
+    ["new", "suggested", "duplicate"].includes(candidate.status)
+  ).length;
 
   const { youAreOwed, youOwe, net } = useDashboardBalances(
     groupIds,
@@ -267,6 +272,28 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
+        )}
+
+        {reviewCandidateCount > 0 && (
+          <Card className="flex flex-col gap-3 border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Inbox className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-black">
+                  {reviewCandidateCount} Gmail suggestion
+                  {reviewCandidateCount === 1 ? "" : "s"} waiting
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Review private transaction candidates before adding them to a ledger.
+                </p>
+              </div>
+            </div>
+            <Button onClick={() => router.push("/expense-inbox")}>
+              Review
+            </Button>
+          </Card>
         )}
 
         {/* Tabs */}
