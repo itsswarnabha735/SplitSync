@@ -8,6 +8,8 @@ const {
   onDocumentUpdatedWithAuthContext,
 } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
+const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {
@@ -33,6 +35,20 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const SELF = "self";
+const GMAIL_OAUTH_CLIENT_SECRET = defineSecret("GMAIL_OAUTH_CLIENT_SECRET");
+const GMAIL_TOKEN_ENCRYPTION_KEY = defineSecret("GMAIL_TOKEN_ENCRYPTION_KEY");
+const GMAIL_OAUTH_STATE_SECRET = defineSecret("GMAIL_OAUTH_STATE_SECRET");
+const gmailSecretOptions = {
+  secrets: [
+    GMAIL_OAUTH_CLIENT_SECRET,
+    GMAIL_TOKEN_ENCRYPTION_KEY,
+    GMAIL_OAUTH_STATE_SECRET,
+  ],
+};
+const GMAIL_PUBSUB_TOPIC_ID =
+  process.env.GMAIL_PUBSUB_TOPIC_ID ||
+  (process.env.GMAIL_PUBSUB_TOPIC || "").split("/").pop() ||
+  "splitsync-gmail-radar";
 const INVALID_TOKEN_CODES = new Set([
   "messaging/registration-token-not-registered",
   "messaging/invalid-registration-token",
@@ -377,6 +393,50 @@ function radarSettingsRef(uid) {
   return db.doc(`users/${uid}/transactionRadarSettings/default`);
 }
 
+function uidFromGmailIntegrationRef(ref) {
+  const match = ref.path.match(/^users\/([^/]+)\/privateIntegrations\/gmail$/);
+  return match?.[1] || "";
+}
+
+function decodePubSubJson(message = {}) {
+  if (message.json && typeof message.json === "object") return message.json;
+  if (!message.data) return {};
+  const data = Buffer.isBuffer(message.data)
+    ? message.data.toString("utf8")
+    : String(message.data);
+  try {
+    return JSON.parse(Buffer.from(data, "base64").toString("utf8"));
+  } catch {
+    try {
+      return JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
+    } catch {
+      return {};
+    }
+  }
+}
+
+async function gmailIntegrationDocsForEmail(emailAddress) {
+  const normalized = normalizeEmail(emailAddress);
+  if (!normalized) return [];
+  const normalizedSnap = await db
+    .collectionGroup("privateIntegrations")
+    .where("normalizedGmailEmail", "==", normalized)
+    .limit(20)
+    .get();
+  if (!normalizedSnap.empty) {
+    return normalizedSnap.docs.filter((docSnap) => dataOf(docSnap).provider === "gmail");
+  }
+
+  const fallbackSnap = await db
+    .collectionGroup("privateIntegrations")
+    .where("provider", "==", "gmail")
+    .limit(100)
+    .get();
+  return fallbackSnap.docs.filter(
+    (docSnap) => normalizeEmail(dataOf(docSnap).gmailEmail) === normalized
+  );
+}
+
 async function exchangeGmailCode(code) {
   const { clientId, clientSecret, redirectUri } = gmailConfig();
   const body = new URLSearchParams({
@@ -474,6 +534,7 @@ async function ensureGmailWatch(uid, accessToken) {
     body: {
       topicName,
       labelIds: ["INBOX"],
+      labelFilterBehavior: "INCLUDE",
     },
   });
   const expiresAt = Number(watch.expiration || 0);
@@ -563,7 +624,7 @@ async function notifyGroupMembers(ctx, excludedUid, payloadFactory) {
   );
 }
 
-exports.createGmailOAuthUrl = onCall(async (request) => {
+exports.createGmailOAuthUrl = onCall(gmailSecretOptions, async (request) => {
   const uid = requireCallableAuth(request);
   const { clientId, redirectUri } = gmailConfig();
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -578,7 +639,7 @@ exports.createGmailOAuthUrl = onCall(async (request) => {
   return { url: url.toString() };
 });
 
-exports.finishGmailOAuth = onCall(async (request) => {
+exports.finishGmailOAuth = onCall(gmailSecretOptions, async (request) => {
   const uid = requireCallableAuth(request);
   const code = String(request.data?.code || "");
   const state = String(request.data?.state || "");
@@ -602,6 +663,7 @@ exports.finishGmailOAuth = onCall(async (request) => {
     {
       provider: "gmail",
       gmailEmail: profile.emailAddress || "",
+      normalizedGmailEmail: normalizeEmail(profile.emailAddress || ""),
       refreshToken,
       accessToken: sealSecret(token.access_token),
       accessTokenExpiresAt: now() + (token.expires_in || 3600) * 1000,
@@ -641,7 +703,7 @@ exports.finishGmailOAuth = onCall(async (request) => {
   return { email: profile.emailAddress || "", sync };
 });
 
-exports.syncGmailTransactions = onCall(async (request) => {
+exports.syncGmailTransactions = onCall(gmailSecretOptions, async (request) => {
   const uid = requireCallableAuth(request);
   try {
     return await syncGmailForUid(uid, { force: true, maxResults: 30 });
@@ -676,41 +738,108 @@ exports.disconnectGmailRadar = onCall(async (request) => {
   return { disconnected: true };
 });
 
-exports.syncActiveGmailConnections = onSchedule("every 10 minutes", async () => {
-  const snap = await db
-    .collectionGroup("privateIntegrations")
-    .where("provider", "==", "gmail")
-    .limit(100)
-    .get();
-  await Promise.all(
-    snap.docs.map(async (docSnap) => {
-      const match = docSnap.ref.path.match(/^users\/([^/]+)\/privateIntegrations\/gmail$/);
-      const uid = match?.[1];
-      if (!uid) return;
-      try {
-        const integration = dataOf(docSnap);
-        const accessToken = await refreshGmailAccessToken(uid, integration);
-        if (
-          process.env.GMAIL_PUBSUB_TOPIC &&
-          (!integration.gmailWatchExpiresAt ||
-            integration.gmailWatchExpiresAt < now() + 24 * 60 * 60 * 1000)
-        ) {
-          await ensureGmailWatch(uid, accessToken);
+exports.syncActiveGmailConnections = onSchedule(
+  { schedule: "every 10 minutes", secrets: gmailSecretOptions.secrets },
+  async () => {
+    const snap = await db
+      .collectionGroup("privateIntegrations")
+      .where("provider", "==", "gmail")
+      .limit(100)
+      .get();
+    await Promise.all(
+      snap.docs.map(async (docSnap) => {
+        const uid = uidFromGmailIntegrationRef(docSnap.ref);
+        if (!uid) return;
+        try {
+          const integration = dataOf(docSnap);
+          const normalizedGmailEmail = normalizeEmail(integration.gmailEmail);
+          if (
+            normalizedGmailEmail &&
+            integration.normalizedGmailEmail !== normalizedGmailEmail
+          ) {
+            await docSnap.ref.set({ normalizedGmailEmail, updatedAt: now() }, { merge: true });
+          }
+          const accessToken = await refreshGmailAccessToken(uid, integration);
+          if (
+            process.env.GMAIL_PUBSUB_TOPIC &&
+            (!integration.gmailWatchExpiresAt ||
+              integration.gmailWatchExpiresAt < now() + 24 * 60 * 60 * 1000)
+          ) {
+            await ensureGmailWatch(uid, accessToken);
+          }
+          await syncGmailForUid(uid, { maxResults: 15 });
+        } catch (err) {
+          logger.warn("Scheduled Gmail sync failed", { uid, error: err.message });
+          await radarSettingsRef(uid).set(
+            {
+              lastSyncError: err.message || "Scheduled Gmail sync failed.",
+              updatedAt: now(),
+            },
+            { merge: true }
+          );
         }
-        await syncGmailForUid(uid, { maxResults: 15 });
-      } catch (err) {
-        logger.warn("Scheduled Gmail sync failed", { uid, error: err.message });
-        await radarSettingsRef(uid).set(
-          {
-            lastSyncError: err.message || "Scheduled Gmail sync failed.",
+      })
+    );
+  }
+);
+
+exports.onGmailPushNotification = onMessagePublished(
+  {
+    topic: GMAIL_PUBSUB_TOPIC_ID,
+    secrets: gmailSecretOptions.secrets,
+    retry: false,
+  },
+  async (event) => {
+    const payload = decodePubSubJson(event.data?.message);
+    const emailAddress = normalizeEmail(payload.emailAddress);
+    const historyId = String(payload.historyId || "");
+    const messageId = event.data?.message?.messageId || "";
+    if (!emailAddress) {
+      logger.warn("Gmail push notification missing emailAddress", { messageId });
+      return;
+    }
+
+    const docs = await gmailIntegrationDocsForEmail(emailAddress);
+    if (docs.length === 0) {
+      logger.info("Gmail push notification had no matching integration", { historyId });
+      return;
+    }
+
+    await Promise.all(
+      docs.map(async (docSnap) => {
+        const uid = uidFromGmailIntegrationRef(docSnap.ref);
+        if (!uid) return;
+        try {
+          const sync = await syncGmailForUid(uid, { maxResults: 10 });
+          const update = {
+            lastPushAt: now(),
+            normalizedGmailEmail: emailAddress,
             updatedAt: now(),
-          },
-          { merge: true }
-        );
-      }
-    })
-  );
-});
+          };
+          if (historyId) update.historyId = historyId;
+          await docSnap.ref.set(update, { merge: true });
+          logger.info("Gmail push sync completed", {
+            uid,
+            historyId,
+            scanned: sync.scanned,
+            created: sync.created,
+            skipped: sync.skipped,
+            paused: sync.paused,
+          });
+        } catch (err) {
+          logger.warn("Gmail push sync failed", { uid, historyId, error: err.message });
+          await radarSettingsRef(uid).set(
+            {
+              lastSyncError: err.message || "Gmail push sync failed.",
+              updatedAt: now(),
+            },
+            { merge: true }
+          );
+        }
+      })
+    );
+  }
+);
 
 exports.cleanupExpiredTransactionCandidates = onSchedule("every 24 hours", async () => {
   const snap = await db
